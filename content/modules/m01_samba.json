@@ -1,0 +1,129 @@
+{
+  "module": 1,
+  "title": "Доменный контроллер Samba",
+  "goal": "Ввести HQ-CLI в домен, создать доменных пользователей и настроить политику паролей",
+  "steps": [
+    {
+      "id": "1.1",
+      "title": "Обновление пакетов",
+      "action": "Обнови список пакетов на HQ-CLI.",
+      "command": "apt-get update",
+      "gui": null,
+      "check": "список пакетов обновлён без ошибок",
+      "pitfalls": [],
+      "image": null
+    },
+    {
+      "id": "1.2",
+      "title": "Пакеты для домена",
+      "action": "Установи пакеты интеграции с AD, ADMC и Яндекс Браузер.",
+      "command": "apt-get install task-auth-ad-sssd admc yandex-browser-stable -y",
+      "gui": null,
+      "check": "пакеты установлены",
+      "pitfalls": [],
+      "image": "assets/img/image1.png"
+    },
+    {
+      "id": "1.3",
+      "title": "Параметры домена",
+      "action": "Укажи домен {{domain}}, рабочую группу {{workgroup}} и имя компьютера hq-cli, затем нажми «Применить».",
+      "command": null,
+      "gui": "Система → Центр управления системой → Аутентификация → Домен Active Directory",
+      "check": "поля заполнены, «Применить» нажата",
+      "pitfalls": [],
+      "image": "assets/img/image3.png"
+    },
+    {
+      "id": "1.4",
+      "title": "Пароль администратора",
+      "action": "Введи пароль администратора {{admin_password}} и подтверди подключение к домену.",
+      "command": null,
+      "gui": "Окно подключения к домену → пароль администратора → ОК",
+      "check": "сообщение «Подключение к домену выполнено»",
+      "pitfalls": [],
+      "image": "assets/img/image6.png"
+    },
+    {
+      "id": "1.5",
+      "title": "Перезагрузка HQ-CLI",
+      "action": "Перезагрузи HQ-CLI, чтобы применилось членство в домене.",
+      "command": "reboot",
+      "gui": null,
+      "check": "система загрузилась, доступен вход доменным пользователем",
+      "pitfalls": [],
+      "image": "assets/img/image8.png"
+    },
+    {
+      "id": "1.6",
+      "title": "Вход в ADMC",
+      "action": "Запусти ADMC и войди как Administrator с паролем {{admin_password}}.",
+      "command": null,
+      "gui": "Меню → Администрирование → ADMC",
+      "check": "открыт список пользователей домена",
+      "pitfalls": [],
+      "image": "assets/img/image10.png"
+    },
+    {
+      "id": "1.7",
+      "title": "Новый пользователь",
+      "action": "Задай имя, имя для входа и пароль, сними «Пользователь должен сменить пароль» и отметь «Пароль не истекает». Повтори для нужного числа пользователей.",
+      "command": null,
+      "gui": "ADMC → Пользователи → правой кнопкой → Создать → Пользователь → ОК",
+      "check": "пользователь появился в списке",
+      "pitfalls": [],
+      "image": "assets/img/image13.png"
+    },
+    {
+      "id": "1.8",
+      "title": "Группа HQ",
+      "action": "Создай группу HQ и сохрани её.",
+      "command": null,
+      "gui": "ADMC → Пользователи → правой кнопкой → Создать → Группа",
+      "check": "группа HQ видна в списке",
+      "pitfalls": [],
+      "image": "assets/img/image14.png"
+    },
+    {
+      "id": "1.9",
+      "title": "Участники группы",
+      "action": "На вкладке «Участники» добавь в группу HQ созданных пользователей и нажми «Применить».",
+      "command": null,
+      "gui": "Группа HQ → Участники → Добавить → ОК",
+      "check": "все пользователи перечислены в группе",
+      "pitfalls": [],
+      "image": "assets/img/image17.png"
+    },
+    {
+      "id": "1.10",
+      "title": "Права sudo для группы",
+      "action": "Создай файл и вставь правило для группы %hq.",
+      "command": "nano /etc/sudoers.d/hq",
+      "gui": null,
+      "check": "файл содержит строку %hq ALL=(ALL) NOPASSWD:ALL",
+      "pitfalls": [
+        "без знака % правило применится к пользователю, а не к группе"
+      ],
+      "image": "assets/img/image23.png"
+    },
+    {
+      "id": "1.11",
+      "title": "Контроль sudo",
+      "action": "Включи контроль sudo, чтобы доменные пользователи получали права.",
+      "command": "control sudo public",
+      "gui": null,
+      "check": "команда завершилась без ошибок",
+      "pitfalls": [],
+      "image": "assets/img/image25.png"
+    },
+    {
+      "id": "1.12",
+      "title": "Политика паролей",
+      "action": "Под root на сервере Samba задай минимальную длину пароля 8 и порог блокировки 5.",
+      "command": "samba-tool domain passwordsettings set --min-pwd-length=8 --account-lockout-threshold=5",
+      "gui": null,
+      "check": "политика изменена, ошибок нет",
+      "pitfalls": [],
+      "image": "assets/img/image31.png"
+    }
+  ]
+}

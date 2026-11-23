@@ -1,0 +1,354 @@
+1. Доменный контроллер Samba.
+Вводим в домен hq-cli
+Устанавливаем на hq-cli необходимые программы
+#apt-get update
+#apt-get install task-auth-ad-sssd admc yandex-browser-stable -y
+[[IMG image1.png]]
+[[IMG image2.png]]
+Заходим в центр управления системой
+выбираем пункт «Аутификация»
+[[IMG image3.png]]
+[[IMG image4.png]]
+выбираем пункт «Домен Active Directory» задаем параметры.
+Домен: au-team.irpo
+Рабочая группа: au-team
+Имя компьютера: hq-cli
+нажимаем кнопку «Применить»
+[[IMG image5.png]]
+Вводим пароль от администратора P@ssw0rd, нажимаем «ОК»
+подключение к домену сделано
+[[IMG image6.png]]
+Перезагружаем hq -cli
+[[IMG image7.png]]
+# reboot
+[[IMG image8.png]]
+Открываем ADMC
+[[IMG image9.png]]
+Вводим логин и пароль домена Administrator P@ssw0rd
+[[IMG image10.png]]
+[[IMG image11.png]]
+Открываем пользователи, в рабочей области правой кнопкой мыши создать > Пользователь
+[[IMG image12.png]]
+Заполняем форму, задаем имя,  имя для входа, пароль,  снимаем галочку «Пользователь должен сменит пароль…» и ставим на пункте «Пароль не истекает», нажимаем «ок».
+[[IMG image13.png]]
+таким образом создаем нужное количество пользователей!!!
+Создаем группу HQ по примеру пользователя
+[[IMG image14.png]]
+задаем имя группы сохраняем
+Добавляем пользователей в группу
+[[IMG image15.png]]
+Выберем созданную группу  и откроем ее
+[[IMG image16.png]]
+выбираем вкладку участники и нажимаем добавить
+[[IMG image17.png]]
+Вводим букв имени пользователей и нажимаем Enter
+[[IMG image18.png]]
+выбираем всех пользователей, нажимаем «ОК» (рис.1.25)
+[[IMG image19.png]]
+Нажимаем «ОК»
+[[IMG image20.png]]
+Нажимаем «Пременить»«ОК»
+[[IMG image21.png]]
+Пользователи созданы и добавлены в группу закрываем admc.
+В терминале проверяем доменных пользователей
+#id aks1
+[[IMG image22.png]]
+Создаем файл с правами доменных пользователей на локальной машине
+#nano /etc/sudoers.d/hq
+[[IMG image23.png]]
+Вставляем сначала знак «%», дальше группа «%hq» и параметры прав для пользователей группы домена.
+[[IMG image24.png]]
+Сохраняем и выходим
+включаем службу контроля самбы
+#control sudo publick
+подключаемся под доменным пользователем
+[[IMG image25.png]]
+#su - aks1
+[[IMG image26.png]]
+проверяем права пользователям
+# sudo id
+[[IMG image27.png]]
+Подключаемся к серверу samba
+[[IMG image28.png]]
+заходим в root
+[[IMG image29.png]]
+Вносим коррективы в политику пароля и входа
+смотрим политики
+#samba-tool domain passwordsettings show
+[[IMG image30.png]]
+меняем политику паролей домена
+#samba-tool domain passwordsettings set --min-pwd-length=8 --account-lockout-threshold=5
+[[IMG image31.png]]
+Политики применены успешно
+[[IMG image32.png]]
+Задание выполнено!
+2. Сконфигурируйте файловое хранилище:
+Выводим список подключенных дисков и их имена.
+# lsblk
+Обратите внимание какие диски свободны!!!!
+[[IMG image33.png]]
+в примере sda, adb и adc. На стенде могут отличатся!!!
+Устанавливаем утилиту mdadm
+#apt-get update && apt-get install mdadm -y
+Создание программного RAID 0
+Для сборки массива применяем следующую команду:
+# mdadm --create --verbose /dev/md0 -l 0 -n 2 /dev/sdb /dev/sdc
+[[IMG image34.png]]
+Проверяем lsblk
+[[IMG image35.png]]
+Имя устройства – md0, конфигурация массива размещается в файле /etc/mdadm.conf
+#mdadm --detail --scan --verbose | tee -a /etc/mdadm.conf
+[[IMG image36.png]]
+Монтирование файловой системы массива
+Отформатируем разделы в ext4:
+# mkfs.ext4 /dev/md0
+[[IMG image37.png]]
+В корне системы создадим директорию /raid5
+#mkdir /raid
+разрешми использование папки
+#chmod 777 /raid
+Монтируем диск для запуска при загрузке системы
+[[IMG image38.png]]
+Выполним подключение рейда
+#mount -t ext4 /dev/md0 /raid
+[[IMG image39.png]]
+Открываем fstab:
+#nano /etc/fstab
+И добавляем строку
+/dev/md0    /raid0    ext4    defaults    0    0
+[[IMG image40.png]]
+Выполним подключение рейда
+mount -av
+RAID массив настроен!
+[[IMG image41.png]]
+3. Настройте сервер сетевой файловой системы (nfs) на HQ-SRV:
+Сервер nfs
+Устанавливаем nfs-server
+#apt-get install nfs-server -y
+Создаем папку общего доступа /raid/nfs
+[[IMG image42.png]]
+#mkdir /raid0/nfs
+Измените права доступа
+#chmod 777 /raid0/nfs/
+Открываем на редактирование файл /etc/exports который содержит информацию о каталогах, экспортируемых с сервера:
+[[IMG image43.png]]
+#nano /etc/exports
+Создаем шару из каталога /raid/nfs, которая будет доступна для узлов HQ-CLI сети 192.168.0.64/28.Добавим в него строку:
+/raid0/nfs       192.168.0.64/28(rw,sync,subtree_check)
+[[IMG image44.png]]
+Запускаем nfs сервер:
+#systemctl enable —now nfs
+[[IMG image45.png]]
+Выполняем экспорт данных (перечитаем конфигурационный файл /etc/exports, чтобы сервер начал отдавать настроенные шары):
+# exportfs -a
+Настраиваем автомонтирование на hq-cli.
+[[IMG image46.png]]
+На HQ-CLI устанавливаем компонент для клиентской части NFS:
+#apt-get install nfs-clients
+Создаем директорию для автомонтирования /mnt/nfs и добавляем прова
+[[IMG image47.png]]
+mkdir /mnt/nfs
+chmod 777 /mnt/nfs
+производим первичное монтирования сетевой папки
+[[IMG image48.png]]
+#mount -t nfs 192.168.0.1:/raid0/nfs /mnt/nfs
+[[IMG image49.png]]
+Для автоматического монтирования на HQ-CLI после перезагрузки, используем fstab. Открываем файл fstab:
+# nano /etc/fstab
+И добавляем строку:
+192.168.0.1:/raid/nfs        /mnt/nfs    nfs     auto    0 0
+[[IMG image50.png]]
+Примонтировать шару:
+# mount -av
+[[IMG image51.png]]
+Проверка
+создаем файл в папке  на сервере с hq-cli
+#touch /mnt/nfs/test
+проверяем на сервере
+[[IMG image52.png]]
+#ls /raid0/nfs
+[[IMG image53.png]]
+Сервер настроен!
+4. Настройте синхронизацию времени между сетевыми устройствами по протоколу NTP на ISP
+Заходим в конфигурационный файл "chrony.conf" на ISP
+nano /etc/chrony.conf – ввод (Enter)
+Приводим конфигурационный файл к следующему виду (рис. 3.2) IP-адреса согласно вашим параметрам:
+[[IMG image54.png]]
+allow 172.16.4.0/28
+allow 172.16.5.0/28
+local stratum 5
+[[IMG image55.png]]
+Сохраняем файл и выходим.
+Перезапускаем службу синхронизации
+systemctl restart chronyd – ввод (Enter)
+[[IMG image56.png]]
+Настройка NTP клиентов  на примере hq-srv, br-srv, hq-cli.
+Заходим в конфигурационный файл "chrony.conf"
+nano /etc/chrony.conf – ввод (Enter)
+Приводим конфигурационный файл к следующему виду IP-адреса согласно вашим параметрам, пункт pool 2.ru.pool.ntp.org iburst закомментировать или удалить!:
+[[IMG image57.png]]
+server 172.16.1.14 iburst prefer
+[[IMG image58.png]]
+Сохраняем файл и выходим.
+Запускаем службу синхронизации
+systemctl restart chronyd – ввод (Enter)
+[[IMG image59.png]]
+Проверяем
+chronyc sources – ввод (Enter)
+[[IMG image60.png]]
+Остальные устройства (HQ-CLI и BR-SRV) настраиваем по аналогии с HQ-SRV.
+5. Сконфигурируйте ansible на сервере BR-SRV
+Создание пары SSH-ключей.
+Чтобы заходить на удаленные машины, пользователь на BR-SRV (sshuser и root) должен создать пару из закрытого/открытого RSA ключа. Это делается следующей командой:
+# ssh-keygen -t rsa
+Далее Enter
+Данную операцию оптимально проделать и от root  «sudo ssh-keygen -t rsa».
+[[IMG image61.png]]
+В результате в каталоге /home/sshuser/.ssh или /root/.ssh будут созданы файлы ключей:
+ls -l ~/.ssh
+id_rsa  # закрытый ключ
+id_rsa.pub # открытый ключ
+[[IMG image62.png]]
+[[IMG image63.png]]
+Копируем открытый SSH-ключ на удаленные устройства под пользователем sshuser:
+Копируем ключ для пользователя sshuser на HQ-SRVНа HQ-SRV ssh порт изменен, указываем его
+ssh-copy-id -p 2024 sshuser@192.168.0.1
+[[IMG image64.png]]
+проверяем работает или нет на HQ-CLI службу SSH и копируем ключ на HQ-CLI
+#systemctl status sshd
+[[IMG image65.png]]
+Копируем ключ
+#ssh-copy-id user@192.168.0.65
+[[IMG image66.png]]
+По аналогии проделываем для пользователя root.
+Устанавливаем ansible.
+apt-get update
+apt-get install ansible -y
+[[IMG image67.png]]
+Подготовка файла инвентаря (hosts) на BR-SRV/
+Редактируем файл инвентаря /etc/ansible/hosts
+#sudo nano /etc/ansible/hosts
+[[IMG image68.png]]
+Сначала указывается название группы в квадратных скобках, затем перечисляются хосты с параметрами: ip, порт (если изменен со стандартного), имя пользователя.[HQ]
+hq-srv ansible_host=192.168.0.1 ansible_port=2026 ansible_user=sshuser
+hq-rtr ansible_host=192.168.0.62 ansible_user=net_admin
+hq-cli ansible_host=192.168.0.65 ansible_user=user
+[BR]
+br-rtr ansible_host=192.168.1.30 ansible_user=net_admin
+Проверка настройки Ansible
+[[IMG image69.png]]
+ansible all -i -m ping
+[[IMG image70.png]]
+Может появиться предупреждение про обнаружение интерпретатора Python, на целевом хосте
+Для управления поведением обнаружения в глобальном масштабе необходимо в файле конфигурации ansible /etc/ansible/ansible.cfg в разделе [defaults] прописать ключ interpreter_python с параметром auto_silent. В большинстве дистрибутивов прописываем вручную.
+# nano /etc/ansible/ansible.cfg
+Прописываем вручную
+Проверяем
+[[IMG image71.png]]
+Инвентарь настроен
+[[IMG image72.png]]
+6. Развертывание приложений в Docker на сервере BR-SRV.
+Устанавливаем docker и docker-compose
+#apt-get update
+#apt-get install docker docker-compose -y
+Запуск docker
+[[IMG image73.png]]
+#systemctl enable docker —now
+[[IMG image74.png]]
+Загружаем образ в среду виртуализации и монтируем на виртуальную машину ISO образ.
+В системе виртуализации выбираем local дальше ISO-образы и Отправить.
+[[IMG image75.png]]
+Находим образ и добавляем его в систему
+Выбрать файл
+[[IMG image76.png]]
+Рабочий стол > приложение > Additional.iso > открыть
+[[IMG image77.png]]
+На устройства подключаем диск, выбираем устройство, заходим в оборудование, двойным кликом открываем меню CD/DVD
+[[IMG image78.png]]
+Выбираем образ: использовать образ файла, выбираем хранилище local, выбираем ISO-образ, нажимаем ОК
+[[IMG image79.png]]
+Проверяем имя устройства CD на виртуальной машине
+lsblk
+[[IMG image80.png]]
+монтируем Additional.iso образ
+mount  /dev/sr0 /mnt/
+[[IMG image81.png]]
+Проверяем файлы для настройки docker в образе Additional.iso
+ls /mnt/docker/
+импортируем в docker установочные файлы с Additional.iso
+[[IMG image82.png]]
+docker load < /mnt/docker/mariadb_latest.tar
+docker load < /mnt/docker/site_latest.tar
+[[IMG image83.png]]
+Копируем compose.yaml в корневую директорию
+# sudo cp /mnt/compose.yaml .
+Запускаем контейнеры docker-compose
+[[IMG image84.png]]
+#docker compose -f web.yaml up -d
+[[IMG image85.png]]
+Приложение должно быть доступно для внешних подключений через порт 8080
+[[IMG image86.png]]
+7. Запустите сервис web на сервере HQ-SRV
+Устанавливаем необходимое ПО
+#apt-get update
+[[IMG image87.png]]
+#apt-get install apache2 mariadb-server  apache2-mod_php8.5 php8.5 php8.5-cgi php8.5-curl php8.5-gd php8.5-intl php8.5-json php8.5-mysqlnd php8.5-pdo php8.5-soap php8.5-sodium php8.5-xml php8.5-mbstring -y
+В качестве системы управления базами данных используйте mariadb
+[[IMG image88.png]]
+#systemctl enable --now mariadb
+#mysql_secure_installation
+[[IMG image89.png]]
+Там везде вводим y, задаем пароль для пользователя root - P@ssw0rd
+[[IMG image90.png]]
+[[IMG image91.png]]
+На устройства подключаем диск, выбираем устройство, заходим в оборудование, двойным кликом открываем меню CD/DVD
+[[IMG image92.png]]
+Выбираем образ: использовать образ файла, выбираем хранилище local, выбираем ISO-образ, нажимаем ОК
+[[IMG image79.png]]
+Проверяем имя устройства CD на виртуальной машине
+#lsblk
+Монтируем ISO образ
+[[IMG image93.png]]
+#mount /dev/sr0 /mnt
+Файлы веб приложения и дамп базы данных находятся в директории web образа Additional.iso
+[[IMG image94.png]]
+копирование файлов веб приложения index.php и logo.png в директорию /var/www/html:
+#cp /mnt/web/index.php /var/www/html
+#cp /mnt/web/logo.png /var/www/html
+[[IMG image95.png]]
+В файле /var/www/html/index.php указать правильные учётные данные для подключения к БД
+#nano /var/www/html/index.php
+[[IMG image96.png]]
+Eсли в задание другие данные то их необходимо заменить согласно задания:
+[[IMG image97.png]]
+[[IMG image98.png]]
+Удалить стандартную станицу
+#rm -f /var/www/html/index.html
+[[IMG image99.png]]
+Cоздаём базу данных:
+mariadb -u root -p
+[[IMG image100.png]]
+CREATE DATABASE webdb;
+CREATE USER 'webc'@'localhost' IDENTIFIED BY 'P@ssw0rd';
+GRANT ALL PRIVILEGES ON webdb.* TO 'webc'@'localhost' with grant option;
+FLUSH PRIVILEGES;
+EXIT;
+[[IMG image101.png]]
+Импортируем базы данных.
+#mariadb -u root -p webdb < dump.sql
+[[IMG image102.png]]
+Перезапускаем веб-сервер:
+#systemctl enable --now httpd
+[[IMG image103.png]]
+для проверки на hq-cli в браузере заходим на адрес http://192.168.0.1
+[[IMG image104.png]]
+9. Установить яндекс браузер на CLI.
+Заходим в терминал под root, обновляем бибдиотеки:
+apt-get update
+Устанавливаем яндекс браузер:
+apt-get install yandex-browser -y
+[[IMG image105.png]]
+заходим в меню > все программы > интернет > Yandex Browser нажимаем правой кнопкой мыши « Добавить на рабочий стол»
+Готово!!!
+[[IMG image106.png]]
+Модуль выполнен в полном объеме!!!

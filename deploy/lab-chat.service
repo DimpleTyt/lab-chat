@@ -1,0 +1,18 @@
+[Unit]
+Description=lab-chat
+After=network.target
+
+[Service]
+Type=simple
+User=labchat
+Group=labchat
+WorkingDirectory=/opt/lab-chat
+EnvironmentFile=/opt/lab-chat/.env
+ExecStart=/opt/lab-chat/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --proxy-headers
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

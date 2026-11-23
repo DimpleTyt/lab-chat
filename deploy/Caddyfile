@@ -1,0 +1,9 @@
+# Если 80/443 проброшены на сервер и есть домен.
+# Caddy сам получит сертификат Let's Encrypt.
+#
+# /etc/caddy/Caddyfile
+
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8000
+}

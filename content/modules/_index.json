@@ -1,0 +1,22 @@
+{
+  "modules": [
+    { "n": 1, "key": "samba", "title": "Доменный контроллер Samba" },
+    { "n": 2, "key": "storage", "title": "Файловое хранилище: RAID" },
+    { "n": 3, "key": "nfs", "title": "Сервер NFS" },
+    { "n": 4, "key": "ntp", "title": "Синхронизация времени (NTP)" },
+    { "n": 5, "key": "ansible", "title": "Ansible на BR-SRV" },
+    { "n": 6, "key": "docker", "title": "Docker на BR-SRV" },
+    { "n": 7, "key": "web", "title": "Веб-сервис на HQ-SRV" },
+    { "n": 9, "key": "browser", "title": "Яндекс Браузер на HQ-CLI" }
+  ],
+  "files": {
+    "1": "m01_samba.json",
+    "2": "m02_storage.json",
+    "3": "m03_nfs.json",
+    "4": "m04_ntp.json",
+    "5": "m05_ansible.json",
+    "6": "m06_docker.json",
+    "7": "m07_web.json",
+    "9": "m09_browser.json"
+  }
+}

@@ -1,0 +1,127 @@
+{
+  "module": 3,
+  "title": "Сервер NFS",
+  "goal": "Отдать каталог с HQ-SRV по NFS и смонтировать его на HQ-CLI",
+  "steps": [
+    {
+      "id": "3.1",
+      "title": "Установка nfs-server",
+      "action": "Установи сервер NFS на HQ-SRV.",
+      "command": "apt-get install nfs-server -y",
+      "gui": null,
+      "check": "nfs-server установлен",
+      "pitfalls": [],
+      "image": null
+    },
+    {
+      "id": "3.2",
+      "title": "Каталог экспорта",
+      "action": "Создай каталог общего доступа.",
+      "command": "mkdir {{nfs.export}}",
+      "gui": null,
+      "check": "каталог {{nfs.export}} создан",
+      "pitfalls": [],
+      "image": "assets/img/image42.png"
+    },
+    {
+      "id": "3.3",
+      "title": "Права на экспорт",
+      "action": "Разреши запись в каталог общего доступа.",
+      "command": "chmod 777 {{nfs.export}}",
+      "gui": null,
+      "check": "права каталога drwxrwxrwx",
+      "pitfalls": [],
+      "image": null
+    },
+    {
+      "id": "3.4",
+      "title": "Файл exports",
+      "action": "Добавь строку `{{nfs.export}} {{nfs.clients}}(rw,sync,subtree_check)`.",
+      "command": "nano /etc/exports",
+      "gui": null,
+      "check": "строка экспорта есть в /etc/exports",
+      "pitfalls": [],
+      "image": "assets/img/image44.png"
+    },
+    {
+      "id": "3.5",
+      "title": "Запуск nfs",
+      "action": "Запусти службу nfs и включи её в автозагрузку.",
+      "command": "systemctl enable --now nfs",
+      "gui": null,
+      "check": "служба nfs активна и включена",
+      "pitfalls": [],
+      "image": "assets/img/image45.png"
+    },
+    {
+      "id": "3.6",
+      "title": "Экспорт данных",
+      "action": "Перечитай /etc/exports, чтобы сервер начал отдавать шару.",
+      "command": "exportfs -a",
+      "gui": null,
+      "check": "exportfs прошёл без ошибок",
+      "pitfalls": [],
+      "image": "assets/img/image46.png"
+    },
+    {
+      "id": "3.7",
+      "title": "Клиент NFS",
+      "action": "На HQ-CLI установи клиентскую часть NFS.",
+      "command": "apt-get install nfs-clients",
+      "gui": null,
+      "check": "пакет nfs-clients установлен",
+      "pitfalls": [],
+      "image": null
+    },
+    {
+      "id": "3.8",
+      "title": "Точка монтирования",
+      "action": "Создай каталог для автомонтирования на HQ-CLI.",
+      "command": "mkdir /mnt/nfs",
+      "gui": null,
+      "check": "каталог /mnt/nfs создан",
+      "pitfalls": [],
+      "image": "assets/img/image47.png"
+    },
+    {
+      "id": "3.9",
+      "title": "Первое монтирование",
+      "action": "Смонтируй сетевую папку с HQ-SRV.",
+      "command": "mount -t nfs {{nfs.server}}:{{nfs.export}} /mnt/nfs",
+      "gui": null,
+      "check": "шара видна в /mnt/nfs",
+      "pitfalls": [],
+      "image": "assets/img/image49.png"
+    },
+    {
+      "id": "3.10",
+      "title": "Автомонтирование",
+      "action": "Добавь в fstab на HQ-CLI строку `{{nfs.server}}:{{nfs.export}} /mnt/nfs nfs auto 0 0`.",
+      "command": "nano /etc/fstab",
+      "gui": null,
+      "check": "строка есть в /etc/fstab",
+      "pitfalls": [],
+      "image": "assets/img/image50.png"
+    },
+    {
+      "id": "3.11",
+      "title": "Проверка fstab",
+      "action": "Примени fstab и проверь монтирование шары.",
+      "command": "mount -av",
+      "gui": null,
+      "check": "шара монтируется без ошибок",
+      "pitfalls": [],
+      "image": "assets/img/image51.png"
+    },
+    {
+      "id": "3.12",
+      "title": "Проверка доступа",
+      "action": "Создай файл на шаре с HQ-CLI.",
+      "command": "touch /mnt/nfs/test",
+      "gui": null,
+      "check": "файл test виден в {{nfs.export}} на HQ-SRV",
+      "pitfalls": [],
+      "image": "assets/img/image52.png"
+    }
+  ]
+}

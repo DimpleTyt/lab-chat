@@ -1,0 +1,489 @@
+#!/usr/bin/env python3
+"""lab-chat CLI - walks the lab steps from a terminal.
+
+No third-party packages: works on the python3 that ships with Astra Linux.
+Talks to the same server as the web UI, so accounts, progress and the
+one-hour session are shared.
+"""
+import argparse
+import getpass
+import json
+import os
+import re
+import ssl
+import sys
+import time
+import urllib.error
+import urllib.request
+
+DEFAULT_SERVER = os.environ.get("LABCHAT_SERVER", "https://exam.nothing-box.com")
+SESSION_FILE = os.path.expanduser("~/.labchat/session.json")
+TIMEOUT = 90
+SSL_CONTEXT = None  # set by --insecure on old Astra installs
+
+BOLD = "\033[1m"
+DIM = "\033[2m"
+GREEN = "\033[32m"
+YELLOW = "\033[33m"
+RED = "\033[31m"
+CYAN = "\033[36m"
+RESET = "\033[0m"
+
+
+class Color:
+    enabled = sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
+
+    @classmethod
+    def wrap(cls, code, text):
+        if not cls.enabled:
+            return text
+        return code + text + RESET
+
+
+class ApiError(Exception):
+    def __init__(self, status, message):
+        super().__init__(message)
+        self.status = status
+
+
+class Client:
+    def __init__(self, server):
+        self.server = server.rstrip("/")
+        self.sid = None
+        self.user = None
+
+    # -- low level ---------------------------------------------------------
+    def _request(self, path, payload=None, method=None):
+        url = self.server + path
+        data = json.dumps(payload).encode("utf-8") if payload is not None else None
+        request = urllib.request.Request(url, data=data, method=method)
+        request.add_header("Accept", "application/json")
+        if data is not None:
+            request.add_header("Content-Type", "application/json; charset=utf-8")
+        if self.sid:
+            request.add_header("Cookie", "sid=" + self.sid)
+        try:
+            response = urllib.request.urlopen(request, timeout=TIMEOUT, context=SSL_CONTEXT)
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", "replace")
+            message = body
+            try:
+                detail = json.loads(body).get("detail")
+                if isinstance(detail, dict):
+                    message = detail.get("message") or body
+            except ValueError:
+                pass
+            raise ApiError(exc.code, message)
+        except urllib.error.URLError as exc:
+            raise ApiError(0, "нет связи с сервером: %s" % exc.reason)
+        try:
+            raw = response.read()
+            headers = response.headers
+        finally:
+            response.close()
+        return raw, headers
+
+    def _json(self, path, payload=None, method=None):
+        raw, headers = self._request(path, payload, method)
+        self._remember_cookie(headers)
+        text = raw.decode("utf-8", "replace")
+        return json.loads(text) if text.strip() else {}
+
+    def _remember_cookie(self, headers):
+        cookie = headers.get("Set-Cookie") or ""
+        match = re.search(r"sid=([^;]+)", cookie)
+        if match:
+            self.sid = match.group(1)
+            save_session(self.server, self.sid)
+        elif "sid=;" in cookie or "sid=," in cookie:
+            self.sid = None
+
+    # -- api ---------------------------------------------------------------
+    def login(self, username, password):
+        data = self._json("/api/login", {"username": username, "password": password}, "POST")
+        self.user = data.get("user") or {"username": username}
+        return self.user
+
+    def logout(self):
+        try:
+            self._json("/api/logout", {}, "POST")
+        except ApiError:
+            pass
+        self.sid = None
+        save_session(self.server, None)
+
+    def state(self):
+        return self._json("/api/state")
+
+    def intake(self, text):
+        return self._json("/api/intake", {"text": text}, "POST")
+
+    def confirm(self, variant):
+        return self._json("/api/intake/confirm", {"variant": variant}, "POST")
+
+    def next_step(self):
+        return self._json("/api/next", {"client_msg_id": "%d" % time.time_ns()}, "POST")
+
+    def jump(self, target):
+        return self._json("/api/jump", {"to": target}, "POST")
+
+    def restart(self):
+        return self._json("/api/restart", {}, "POST")
+
+    def chat(self, text, on_delta):
+        payload = {"text": text, "client_msg_id": "%d" % time.time_ns()}
+        request = urllib.request.Request(
+            self.server + "/api/chat",
+            data=json.dumps(payload).encode("utf-8"),
+            method="POST",
+        )
+        request.add_header("Content-Type", "application/json; charset=utf-8")
+        request.add_header("Accept", "text/event-stream")
+        if self.sid:
+            request.add_header("Cookie", "sid=" + self.sid)
+        try:
+            response = urllib.request.urlopen(request, timeout=TIMEOUT, context=SSL_CONTEXT)
+        except urllib.error.HTTPError as exc:
+            raise ApiError(exc.code, exc.read().decode("utf-8", "replace"))
+        except urllib.error.URLError as exc:
+            raise ApiError(0, "нет связи с сервером: %s" % exc.reason)
+
+        event = None
+        result = {"intent": None, "step": None, "done": None}
+        with response:
+            for raw in response:
+                line = raw.decode("utf-8", "replace").rstrip("\r\n")
+                if line.startswith("event:"):
+                    event = line[6:].strip()
+                    continue
+                if not line.startswith("data:"):
+                    continue
+                payload = json.loads(line[5:].strip() or "{}")
+                if event == "meta":
+                    result["intent"] = payload.get("intent")
+                elif event == "delta":
+                    text_piece = payload.get("text") or ""
+                    if text_piece:
+                        on_delta(text_piece)
+                elif event == "step":
+                    result["step"] = payload.get("step") or payload
+                elif event == "done":
+                    result["done"] = payload
+        return result
+
+
+# --------------------------------------------------------------------------- #
+# Session file
+# --------------------------------------------------------------------------- #
+def save_session(server, sid):
+    try:
+        os.makedirs(os.path.dirname(SESSION_FILE), exist_ok=True)
+        with open(SESSION_FILE, "w", encoding="utf-8") as fh:
+            json.dump({"server": server, "sid": sid}, fh)
+        os.chmod(SESSION_FILE, 0o600)
+    except OSError:
+        pass
+
+
+def load_session(server):
+    try:
+        with open(SESSION_FILE, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    if data.get("server") != server:
+        return None
+    return data.get("sid")
+
+
+# --------------------------------------------------------------------------- #
+# Rendering
+# --------------------------------------------------------------------------- #
+def rule():
+    return Color.wrap(DIM, "-" * 62)
+
+
+def print_step(step):
+    num = step.get("num")
+    total = step.get("total")
+    module = step.get("module")
+    title = step.get("module_title") or ""
+    header = "Шаг %s/%s · Модуль %s: %s" % (num, total, module, title)
+    print()
+    print(rule())
+    print(Color.wrap(BOLD, header))
+    print()
+    print(Color.wrap(BOLD, "Что делать:") + " " + (step.get("action") or ""))
+    if step.get("gui"):
+        print()
+        print(Color.wrap(BOLD, "Куда нажать:") + " " + step["gui"])
+    if step.get("command"):
+        print()
+        for line in step["command"].splitlines():
+            print("    " + Color.wrap(CYAN, line))
+    if step.get("check"):
+        print()
+        print(Color.wrap(BOLD, "Готово, если:") + " " + step["check"])
+    pitfalls = step.get("pitfalls") or []
+    if pitfalls:
+        print()
+        print(Color.wrap(YELLOW, "Важно: ") + "; ".join(pitfalls))
+    image = step.get("image")
+    if image:
+        print()
+        print(Color.wrap(DIM, "Картинка: ") + step.get("_server", "") + "/" + image.lstrip("/"))
+    print(rule())
+
+
+def print_progress(progress):
+    if not progress:
+        return
+    idx = progress.get("idx") or 0
+    total = progress.get("total") or 0
+    if total:
+        filled = int(round(20 * idx / total))
+        bar = "#" * filled + "." * (20 - filled)
+        print(Color.wrap(DIM, "[%s] %s/%s" % (bar, idx, total)))
+
+
+def print_card(data):
+    variant = data.get("variant") or {}
+    sources = data.get("sources") or []
+    exam = [s for s in sources if s.get("source") != "method"]
+    method = [s for s in sources if s.get("source") == "method"]
+
+    def show(title, items):
+        if not items:
+            return
+        print()
+        print(Color.wrap(BOLD, title))
+        for item in items:
+            label = item.get("label") or item.get("key")
+            print("  %-22s %s" % (label + ":", item.get("value")))
+
+    print()
+    print(rule())
+    show("ИЗ ЗАДАНИЯ", exam)
+    show("ИЗ МЕТОДИЧКИ", method)
+    print()
+    if data.get("unknown"):
+        print(Color.wrap(YELLOW, "Не распознано: ") + ", ".join(map(str, data["unknown"])))
+    for warning in data.get("warnings") or []:
+        print(Color.wrap(YELLOW, "Внимание: ") + warning)
+    print(rule())
+    _ = variant
+
+
+# --------------------------------------------------------------------------- #
+# Interaction
+# --------------------------------------------------------------------------- #
+HELP = """
+Enter        следующий шаг
+текст        вопрос или описание ошибки
+/step N      перейти к шагу N (или к id вида 2.3)
+/restart     начать заново
+/variant     изменить задание
+/repeat      повторить текущий шаг
+/copy        показать команду текущего шага отдельно
+/logout      выйти
+/quit        закрыть программу
+""".strip()
+
+
+def ask(prompt):
+    try:
+        return input(prompt)
+    except EOFError:
+        return "/quit"
+
+
+def ensure_login(client, username=None, password=None):
+    sid = load_session(client.server)
+    if sid:
+        client.sid = sid
+        try:
+            data = client.state()
+            client.user = data.get("user")
+            return data
+        except ApiError as exc:
+            if exc.status != 401:
+                raise
+            client.sid = None
+
+    while True:
+        user = username or ask("Логин: ")
+        if not username:
+            username = None
+        secret = password or getpass.getpass("Пароль: ")
+        try:
+            client.login(user.strip(), secret)
+            return client.state()
+        except ApiError as exc:
+            print(Color.wrap(RED, "Не получилось: ") + str(exc))
+            if username and password:
+                raise
+            username = password = None
+
+
+def run_intake(client):
+    print()
+    print("Вставь текст задания. Одна строка, Enter в конце.")
+    text = ask("> ").strip()
+    if not text:
+        print(Color.wrap(YELLOW, "Пустое задание — идём по методичке."))
+    while True:
+        data = client.intake(text)
+        print_card(data)
+        answer = ask("Всё верно? [Y/n] ").strip().lower()
+        if answer in ("", "y", "yes", "д", "да"):
+            result = client.confirm(data.get("variant") or {})
+            step = result.get("step")
+            if step:
+                step["_server"] = client.server
+                print_step(step)
+                print_progress(result.get("progress"))
+            return
+        text = ask("Задание: ").strip()
+
+
+def loop(client, state):
+    phase = state.get("phase")
+    if phase in ("intake", "confirm"):
+        run_intake(client)
+    else:
+        step = state.get("step")
+        if step:
+            step["_server"] = client.server
+            print_step(step)
+            print_progress(state.get("progress"))
+
+    last_step = state.get("step")
+    while True:
+        raw = ask(Color.wrap(DIM, "\n> "))
+        text = raw.strip()
+
+        if text in ("/quit", "/exit", "/q"):
+            return
+        if text in ("/help", "?"):
+            print(HELP)
+            continue
+        if text == "/repeat":
+            if last_step:
+                last_step["_server"] = client.server
+                print_step(last_step)
+            continue
+        if text == "/copy":
+            if last_step and last_step.get("command"):
+                print(last_step["command"])
+            else:
+                print(Color.wrap(DIM, "На этом шаге нет команды."))
+            continue
+        if text == "/logout":
+            client.logout()
+            print("Вышел.")
+            return
+        if text == "/variant":
+            if last_step:
+                client.restart()
+            run_intake(client)
+            last_step = client.state().get("step")
+            continue
+
+        try:
+            if text.startswith("/step"):
+                target = text[5:].strip()
+                data = client.jump(target)
+                step = data.get("step")
+                if step:
+                    step["_server"] = client.server
+                    last_step = step
+                    print_step(step)
+                    print_progress(data.get("progress"))
+                continue
+
+            if text == "/restart":
+                data = client.restart()
+                step = data.get("step")
+                if step:
+                    step["_server"] = client.server
+                    last_step = step
+                    print_step(step)
+                    print_progress(data.get("progress"))
+                continue
+
+            if text == "":
+                data = client.next_step()
+                step = data.get("step")
+                if step:
+                    step["_server"] = client.server
+                    last_step = step
+                    print_step(step)
+                    print_progress(data.get("progress"))
+                continue
+
+            # free text: question or error
+            print()
+            def emit(piece):
+                sys.stdout.write(piece)
+                sys.stdout.flush()
+
+            result = client.chat(text, emit)
+            print()
+            step = result.get("step")
+            if step:
+                step["_server"] = client.server
+                last_step = step
+                print_step(step)
+            progress = (result.get("done") or {}).get("progress")
+            print_progress(progress)
+        except ApiError as exc:
+            if exc.status == 401:
+                print(Color.wrap(YELLOW, "Сессия истекла, войди снова."))
+                state = ensure_login(client)
+                print(Color.wrap(DIM, "Продолжаем с сохранённого шага."))
+                step = state.get("step")
+                if step:
+                    step["_server"] = client.server
+                    last_step = step
+                    print_step(step)
+                continue
+            print(Color.wrap(RED, "Ошибка: ") + str(exc))
+
+
+def main():
+    parser = argparse.ArgumentParser(description="lab-chat в терминале")
+    parser.add_argument("--server", default=DEFAULT_SERVER)
+    parser.add_argument("--user", default=os.environ.get("LABCHAT_USER"))
+    parser.add_argument("--password", default=os.environ.get("LABCHAT_PASSWORD"))
+    parser.add_argument("--no-color", action="store_true")
+    parser.add_argument("--insecure", action="store_true", help="не проверять TLS-сертификат")
+    args = parser.parse_args()
+
+    if args.no_color:
+        Color.enabled = False
+
+    if args.insecure:
+        global SSL_CONTEXT
+        SSL_CONTEXT = ssl.create_default_context()
+        SSL_CONTEXT.check_hostname = False
+        SSL_CONTEXT.verify_mode = ssl.CERT_NONE
+
+    client = Client(args.server)
+    try:
+        state = ensure_login(client, args.user, args.password)
+    except ApiError as exc:
+        print(Color.wrap(RED, "Вход не удался: ") + str(exc))
+        return 1
+
+    name = (client.user or {}).get("display_name") or (client.user or {}).get("username")
+    print(Color.wrap(BOLD, "lab-chat") + Color.wrap(DIM, " · " + args.server))
+    print("Пользователь: %s   ·   /help для подсказок" % name)
+    try:
+        loop(client, state)
+    except KeyboardInterrupt:
+        print()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

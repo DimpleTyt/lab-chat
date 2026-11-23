@@ -1,0 +1,99 @@
+{
+  "module": 4,
+  "title": "Синхронизация времени (NTP)",
+  "goal": "Поднять сервер времени на ISP и синхронизировать HQ-SRV, BR-SRV и HQ-CLI",
+  "steps": [
+    {
+      "id": "4.1",
+      "title": "chrony на ISP",
+      "action": "На ISP добавь два правила allow для сетей {{ntp.allow}} и строку local stratum {{ntp.stratum}}.",
+      "command": "nano /etc/chrony.conf",
+      "gui": null,
+      "check": "в файле есть два allow и local stratum {{ntp.stratum}}",
+      "pitfalls": [],
+      "image": "assets/img/image54.png"
+    },
+    {
+      "id": "4.2",
+      "title": "Перезапуск chronyd на ISP",
+      "action": "Перезапусти службу синхронизации на ISP.",
+      "command": "systemctl restart chronyd",
+      "gui": null,
+      "check": "служба перезапущена без ошибок",
+      "pitfalls": [],
+      "image": "assets/img/image56.png"
+    },
+    {
+      "id": "4.3",
+      "title": "Клиент HQ-SRV",
+      "action": "На HQ-SRV закомментируй или удали строку pool и добавь server {{ntp.server}} iburst prefer.",
+      "command": "nano /etc/chrony.conf",
+      "gui": null,
+      "check": "в файле указан server {{ntp.server}} iburst prefer",
+      "pitfalls": [
+        "строку pool 2.ru.pool.ntp.org iburst нужно убрать или закомментировать"
+      ],
+      "image": "assets/img/image57.png"
+    },
+    {
+      "id": "4.4",
+      "title": "Перезапуск chronyd на HQ-SRV",
+      "action": "Перезапусти службу синхронизации на HQ-SRV.",
+      "command": "systemctl restart chronyd",
+      "gui": null,
+      "check": "служба перезапущена без ошибок",
+      "pitfalls": [],
+      "image": "assets/img/image59.png"
+    },
+    {
+      "id": "4.5",
+      "title": "Проверка источников",
+      "action": "Проверь, с какого сервера идёт синхронизация.",
+      "command": "chronyc sources",
+      "gui": null,
+      "check": "источник {{ntp.server}} есть в списке",
+      "pitfalls": [],
+      "image": "assets/img/image60.png"
+    },
+    {
+      "id": "4.6",
+      "title": "Клиент BR-SRV",
+      "action": "На BR-SRV настрой chrony по аналогии с HQ-SRV.",
+      "command": "nano /etc/chrony.conf",
+      "gui": null,
+      "check": "в файле указан server {{ntp.server}} iburst prefer",
+      "pitfalls": [],
+      "image": null
+    },
+    {
+      "id": "4.7",
+      "title": "Перезапуск chronyd на BR-SRV",
+      "action": "Перезапусти службу синхронизации на BR-SRV.",
+      "command": "systemctl restart chronyd",
+      "gui": null,
+      "check": "служба перезапущена без ошибок",
+      "pitfalls": [],
+      "image": null
+    },
+    {
+      "id": "4.8",
+      "title": "Клиент HQ-CLI",
+      "action": "На HQ-CLI настрой chrony по аналогии с HQ-SRV.",
+      "command": "nano /etc/chrony.conf",
+      "gui": null,
+      "check": "в файле указан server {{ntp.server}} iburst prefer",
+      "pitfalls": [],
+      "image": null
+    },
+    {
+      "id": "4.9",
+      "title": "Перезапуск chronyd на HQ-CLI",
+      "action": "Перезапусти службу синхронизации на HQ-CLI.",
+      "command": "systemctl restart chronyd",
+      "gui": null,
+      "check": "служба перезапущена без ошибок",
+      "pitfalls": [],
+      "image": null
+    }
+  ]
+}

@@ -1,0 +1,151 @@
+{
+  "module": 7,
+  "title": "Веб-сервис на HQ-SRV",
+  "goal": "Развернуть Apache с PHP-приложением и базой MariaDB на HQ-SRV",
+  "steps": [
+    {
+      "id": "7.1",
+      "title": "Установка пакетов",
+      "action": "Установи Apache, MariaDB и модули PHP.",
+      "command": "apt-get install apache2 mariadb-server  apache2-mod_php8.5 php8.5 php8.5-cgi php8.5-curl php8.5-gd php8.5-intl php8.5-json php8.5-mysqlnd php8.5-pdo php8.5-soap php8.5-sodium php8.5-xml php8.5-mbstring -y",
+      "gui": null,
+      "check": "apache2 и mariadb-server установлены",
+      "pitfalls": [],
+      "image": "assets/img/image88.png",
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "7.2",
+      "title": "Запуск MariaDB",
+      "action": "Включи MariaDB и добавь её в автозапуск.",
+      "command": "systemctl enable --now mariadb",
+      "gui": null,
+      "check": "mariadb активна",
+      "pitfalls": [],
+      "image": null,
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "7.3",
+      "title": "Защита MariaDB",
+      "action": "Ответь y на все вопросы и задай пароль root {{admin_password}}.",
+      "command": "mysql_secure_installation",
+      "gui": null,
+      "check": "mariadb -u root -p пускает с этим паролем",
+      "pitfalls": ["на все вопросы отвечай y"],
+      "image": "assets/img/image89.png",
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "7.4",
+      "title": "Подключение ISO",
+      "action": "Подключи к HQ-SRV образ Additional.iso как CD/DVD.",
+      "command": null,
+      "gui": "Виртуальная машина → Оборудование → CD/DVD → Использовать образ файла → Хранилище local → Additional.iso → ОК",
+      "check": "в оборудовании машины указан Additional.iso",
+      "pitfalls": [],
+      "image": "assets/img/image92.png",
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "7.5",
+      "title": "Монтирование ISO",
+      "action": "Смонтируй образ в /mnt.",
+      "command": "mount /dev/sr0 /mnt",
+      "gui": null,
+      "check": "ls /mnt/web показывает index.php, logo.png и дамп базы",
+      "pitfalls": ["имя привода проверь через lsblk"],
+      "image": "assets/img/image93.png",
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "7.6",
+      "title": "Копирование index.php",
+      "action": "Скопируй главную страницу приложения в каталог сайта.",
+      "command": "cp /mnt/web/index.php /var/www/html",
+      "gui": null,
+      "check": "файл /var/www/html/index.php существует",
+      "pitfalls": [],
+      "image": "assets/img/image95.png",
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "7.7",
+      "title": "Копирование logo.png",
+      "action": "Скопируй логотип в каталог сайта.",
+      "command": "cp /mnt/web/logo.png /var/www/html",
+      "gui": null,
+      "check": "файл /var/www/html/logo.png существует",
+      "pitfalls": [],
+      "image": null,
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "7.8",
+      "title": "Учётные данные БД",
+      "action": "Пропиши в index.php базу {{web.db}}, пользователя {{web.user}} и пароль {{web.password}}.",
+      "command": "nano /var/www/html/index.php",
+      "gui": null,
+      "check": "в файле нет данных из образа, только значения задания",
+      "pitfalls": [],
+      "image": "assets/img/image96.png",
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "7.9",
+      "title": "Стандартная страница",
+      "action": "Удали стандартную заглушку Apache.",
+      "command": "rm -f /var/www/html/index.html",
+      "gui": null,
+      "check": "ls /var/www/html не показывает index.html",
+      "pitfalls": ["пока файл на месте, Apache отдаёт его вместо index.php"],
+      "image": "assets/img/image99.png",
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "7.10",
+      "title": "База и пользователь",
+      "action": "Создай базу {{web.db}}, пользователя {{web.user}} с паролем {{web.password}}, выдай ему права и выйди.",
+      "command": "mariadb -u root -p",
+      "gui": null,
+      "check": "SHOW DATABASES показывает {{web.db}}",
+      "pitfalls": ["пароль root запросит сразу после ввода команды"],
+      "image": "assets/img/image100.png",
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "7.11",
+      "title": "Импорт дампа",
+      "action": "Загрузи дамп в созданную базу.",
+      "command": "mariadb -u root -p {{web.db}} < dump.sql",
+      "gui": null,
+      "check": "в базе появились таблицы приложения",
+      "pitfalls": ["дамп лежит в /mnt/web, выполняй из этого каталога или укажи полный путь"],
+      "image": "assets/img/image102.png",
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "7.12",
+      "title": "Запуск Apache и проверка",
+      "action": "Включи apache2 и добавь его в автозапуск.",
+      "command": "systemctl enable --now apache2",
+      "gui": null,
+      "check": "на HQ-CLI по адресу http://{{hosts.hq-srv}} открывается страница приложения",
+      "pitfalls": ["в методичке включается httpd, но установлен apache2"],
+      "image": "assets/img/image103.png",
+      "requires": null,
+      "exclude": null
+    }
+  ]
+}

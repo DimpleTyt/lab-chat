@@ -1,0 +1,119 @@
+{
+  "module": 2,
+  "title": "Файловое хранилище: RAID",
+  "goal": "Собрать программный RAID и смонтировать его",
+  "steps": [
+    {
+      "id": "2.1",
+      "title": "Список дисков",
+      "action": "Выведи список дисков и определи свободные.",
+      "command": "lsblk",
+      "gui": null,
+      "check": "видны свободные диски без разделов",
+      "pitfalls": [
+        "имена дисков на стенде могут отличаться"
+      ],
+      "image": "assets/img/image33.png"
+    },
+    {
+      "id": "2.2",
+      "title": "Установка mdadm",
+      "action": "Установи утилиту mdadm.",
+      "command": "apt-get update && apt-get install mdadm -y",
+      "gui": null,
+      "check": "mdadm установлен",
+      "pitfalls": [],
+      "image": null
+    },
+    {
+      "id": "2.3",
+      "title": "Создание массива",
+      "action": "Собери массив RAID {{storage.raid_level}} из {{storage.disks}} дисков.",
+      "command": "mdadm --create --verbose /dev/md0 -l {{storage.raid_level}} -n {{storage.disks}} {{storage.devices_str}}",
+      "gui": null,
+      "check": "mdadm сообщил о создании массива /dev/md0",
+      "pitfalls": [],
+      "image": "assets/img/image34.png"
+    },
+    {
+      "id": "2.4",
+      "title": "Проверка массива",
+      "action": "Проверь, что массив появился в списке блочных устройств.",
+      "command": "lsblk",
+      "gui": null,
+      "check": "в выводе есть md0 нужного размера",
+      "pitfalls": [],
+      "image": "assets/img/image35.png"
+    },
+    {
+      "id": "2.5",
+      "title": "Конфигурация mdadm",
+      "action": "Запиши конфигурацию массива в /etc/mdadm.conf.",
+      "command": "mdadm --detail --scan --verbose | tee -a /etc/mdadm.conf",
+      "gui": null,
+      "check": "строка массива есть в /etc/mdadm.conf",
+      "pitfalls": [],
+      "image": "assets/img/image36.png"
+    },
+    {
+      "id": "2.6",
+      "title": "Файловая система",
+      "action": "Отформатируй массив в ext4.",
+      "command": "mkfs.ext4 /dev/md0",
+      "gui": null,
+      "check": "файловая система ext4 создана",
+      "pitfalls": [],
+      "image": "assets/img/image37.png"
+    },
+    {
+      "id": "2.7",
+      "title": "Каталог монтирования",
+      "action": "Создай каталог для монтирования массива.",
+      "command": "mkdir -p {{storage.mount}}",
+      "gui": null,
+      "check": "каталог {{storage.mount}} существует",
+      "pitfalls": [],
+      "image": null
+    },
+    {
+      "id": "2.8",
+      "title": "Права на каталог",
+      "action": "Разреши запись в каталог монтирования.",
+      "command": "chmod 777 {{storage.mount}}",
+      "gui": null,
+      "check": "права каталога drwxrwxrwx",
+      "pitfalls": [],
+      "image": null
+    },
+    {
+      "id": "2.9",
+      "title": "Монтирование",
+      "action": "Смонтируй массив в каталог.",
+      "command": "mount -t ext4 /dev/md0 {{storage.mount}}",
+      "gui": null,
+      "check": "md0 смонтирован в {{storage.mount}}",
+      "pitfalls": [],
+      "image": "assets/img/image39.png"
+    },
+    {
+      "id": "2.10",
+      "title": "Запись в fstab",
+      "action": "Добавь в fstab строку `{{storage.md}} {{storage.mount}} ext4 defaults 0 0`.",
+      "command": "nano /etc/fstab",
+      "gui": null,
+      "check": "строка есть в /etc/fstab",
+      "pitfalls": [],
+      "image": "assets/img/image40.png"
+    },
+    {
+      "id": "2.11",
+      "title": "Проверка fstab",
+      "action": "Примени fstab и проверь, что массив монтируется.",
+      "command": "mount -av",
+      "gui": null,
+      "check": "md0 монтируется без ошибок",
+      "pitfalls": [],
+      "image": "assets/img/image41.png"
+    }
+  ]
+}

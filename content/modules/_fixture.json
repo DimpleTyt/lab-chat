@@ -1,0 +1,29 @@
+{
+  "module": 2,
+  "title": "Файловое хранилище: RAID",
+  "goal": "Собрать программный RAID и смонтировать его",
+  "steps": [
+    {
+      "id": "2.1",
+      "title": "Список дисков",
+      "action": "Покажи список дисков и найди свободные.",
+      "command": "lsblk",
+      "gui": null,
+      "check": "видны 2 свободных диска (sdb, sdc)",
+      "pitfalls": ["имена дисков на стенде могут отличаться"],
+      "image": "assets/img/image23.png",
+      "requires": {"storage.raid_level": [0, 1, 5, 10]}
+    },
+    {
+      "id": "2.2",
+      "title": "Создание RAID",
+      "action": "Собери массив из {{storage.disks}} дисков.",
+      "command": "mdadm --create --verbose /dev/md0 -l {{storage.raid_level}} -n {{storage.disks}} {{storage.devices_str}}",
+      "gui": null,
+      "check": "lsblk показывает md0",
+      "pitfalls": [],
+      "image": null,
+      "requires": {"storage.raid_level": [0, 1, 5, 10]}
+    }
+  ]
+}

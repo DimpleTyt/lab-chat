@@ -1,0 +1,79 @@
+{
+  "module": 9,
+  "title": "Яндекс Браузер на HQ-CLI",
+  "goal": "Установить Яндекс Браузер и вынести ярлык на рабочий стол",
+  "steps": [
+    {
+      "id": "9.1",
+      "title": "Терминал под root",
+      "action": "Открой терминал на HQ-CLI и войди под root.",
+      "command": null,
+      "gui": "Меню → Все программы → Системные → Терминал",
+      "check": "приглашение начинается с root@",
+      "pitfalls": [],
+      "image": null,
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "9.2",
+      "title": "Обновление пакетов",
+      "action": "Обнови список пакетов.",
+      "command": "apt-get update",
+      "gui": null,
+      "check": "список пакетов прочитан без ошибок",
+      "pitfalls": [],
+      "image": null,
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "9.3",
+      "title": "Установка браузера",
+      "action": "Установи Яндекс Браузер.",
+      "command": "apt-get install yandex-browser -y",
+      "gui": null,
+      "check": "пакет yandex-browser установлен без ошибок",
+      "pitfalls": [],
+      "image": "assets/img/image105.png",
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "9.4",
+      "title": "Браузер в меню",
+      "action": "Найди Яндекс Браузер в меню приложений.",
+      "command": null,
+      "gui": "Меню → Все программы → Интернет → Yandex Browser",
+      "check": "в разделе Интернет есть Yandex Browser",
+      "pitfalls": [],
+      "image": null,
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "9.5",
+      "title": "Ярлык на рабочем столе",
+      "action": "Создай ярлык браузера на рабочем столе.",
+      "command": null,
+      "gui": "Меню → Все программы → Интернет → Yandex Browser → правая кнопка мыши → Добавить на рабочий стол",
+      "check": "на рабочем столе появился ярлык браузера",
+      "pitfalls": [],
+      "image": "assets/img/image106.png",
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "9.6",
+      "title": "Запуск с рабочего стола",
+      "action": "Запусти браузер двойным кликом по ярлыку.",
+      "command": null,
+      "gui": "Рабочий стол → Yandex Browser",
+      "check": "окно браузера открылось",
+      "pitfalls": [],
+      "image": null,
+      "requires": null,
+      "exclude": null
+    }
+  ]
+}

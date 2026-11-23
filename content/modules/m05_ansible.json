@@ -1,0 +1,139 @@
+{
+  "module": 5,
+  "title": "Ansible на BR-SRV",
+  "goal": "Настроить SSH-доступ по ключам и инвентарь Ansible с BR-SRV",
+  "steps": [
+    {
+      "id": "5.1",
+      "title": "Ключ SSH для sshuser",
+      "action": "Создай пару ключей RSA под пользователем sshuser.",
+      "command": "ssh-keygen -t rsa",
+      "gui": null,
+      "check": "в ~/.ssh появились id_rsa и id_rsa.pub",
+      "pitfalls": ["на все вопросы жми Enter, пароль можно не задавать"],
+      "image": "assets/img/image61.png",
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "5.2",
+      "title": "Ключ SSH для root",
+      "action": "Создай такую же пару ключей от root.",
+      "command": "sudo ssh-keygen -t rsa",
+      "gui": null,
+      "check": "в /root/.ssh появились id_rsa и id_rsa.pub",
+      "pitfalls": [],
+      "image": null,
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "5.3",
+      "title": "Проверка ключей",
+      "action": "Посмотри файлы в каталоге ключей.",
+      "command": "ls -l ~/.ssh",
+      "gui": null,
+      "check": "видны id_rsa и id_rsa.pub",
+      "pitfalls": [],
+      "image": "assets/img/image62.png",
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "5.4",
+      "title": "Ключ на HQ-SRV",
+      "action": "Скопируй открытый ключ sshuser на HQ-SRV.",
+      "command": "ssh-copy-id -p 2024 sshuser@{{hosts.hq-srv}}",
+      "gui": null,
+      "check": "ключ добавлен, пароль больше не спрашивается",
+      "pitfalls": ["на HQ-SRV SSH слушает нестандартный порт 2024"],
+      "image": "assets/img/image64.png",
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "5.5",
+      "title": "Служба SSH на HQ-CLI",
+      "action": "Проверь на HQ-CLI, что служба SSH запущена.",
+      "command": "systemctl status sshd",
+      "gui": null,
+      "check": "статус active (running)",
+      "pitfalls": [],
+      "image": "assets/img/image65.png",
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "5.6",
+      "title": "Ключ на HQ-CLI",
+      "action": "Скопируй ключ на HQ-CLI под пользователем user.",
+      "command": "ssh-copy-id user@{{hosts.hq-cli}}",
+      "gui": null,
+      "check": "ключ добавлен, вход без пароля работает",
+      "pitfalls": [],
+      "image": "assets/img/image66.png",
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "5.7",
+      "title": "Обновление пакетов",
+      "action": "Обнови список пакетов на BR-SRV.",
+      "command": "apt-get update",
+      "gui": null,
+      "check": "список пакетов прочитан без ошибок",
+      "pitfalls": [],
+      "image": "assets/img/image67.png",
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "5.8",
+      "title": "Установка Ansible",
+      "action": "Установи Ansible.",
+      "command": "apt-get install ansible -y",
+      "gui": null,
+      "check": "ansible --version выводит версию",
+      "pitfalls": [],
+      "image": null,
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "5.9",
+      "title": "Файл инвентаря",
+      "action": "Опиши группы [HQ] и [BR], в каждой хосты с ansible_host и ansible_user. У hq-srv укажи ansible_port=2026.",
+      "command": "sudo nano /etc/ansible/hosts",
+      "gui": null,
+      "check": "в файле четыре хоста: hq-srv, hq-rtr, hq-cli, br-rtr",
+      "pitfalls": ["порт SSH в инвентаре 2026, а ssh-copy-id в методичке идёт на 2024"],
+      "image": "assets/img/image68.png",
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "5.10",
+      "title": "Проверка связи",
+      "action": "Проверь доступность всех хостов инвентаря.",
+      "command": "ansible all -i -m ping",
+      "gui": null,
+      "check": "каждый хост отвечает pong",
+      "pitfalls": ["в методичке ключ -i указан без файла инвентаря"],
+      "image": "assets/img/image70.png",
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "5.11",
+      "title": "Интерпретатор Python",
+      "action": "В разделе [defaults] пропиши interpreter_python = auto_silent.",
+      "command": "nano /etc/ansible/ansible.cfg",
+      "gui": null,
+      "check": "предупреждение про Python при ping исчезло",
+      "pitfalls": [],
+      "image": "assets/img/image71.png",
+      "requires": null,
+      "exclude": null
+    }
+  ]
+}

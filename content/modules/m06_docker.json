@@ -1,0 +1,139 @@
+{
+  "module": 6,
+  "title": "Docker на BR-SRV",
+  "goal": "Запустить приложение и базу в контейнерах из образов Additional.iso",
+  "steps": [
+    {
+      "id": "6.1",
+      "title": "Обновление пакетов",
+      "action": "Обнови список пакетов на BR-SRV.",
+      "command": "apt-get update",
+      "gui": null,
+      "check": "список пакетов прочитан без ошибок",
+      "pitfalls": [],
+      "image": null,
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "6.2",
+      "title": "Установка Docker",
+      "action": "Установи docker и docker-compose.",
+      "command": "apt-get install docker docker-compose -y",
+      "gui": null,
+      "check": "docker --version и docker-compose --version отвечают",
+      "pitfalls": [],
+      "image": null,
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "6.3",
+      "title": "Запуск Docker",
+      "action": "Включи docker и добавь его в автозапуск.",
+      "command": "systemctl enable docker --now",
+      "gui": null,
+      "check": "docker активен и включён в автозапуск",
+      "pitfalls": ["в методичке опечатка «—now», верно --now"],
+      "image": "assets/img/image74.png",
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "6.4",
+      "title": "Подключение ISO",
+      "action": "Подключи к BR-SRV образ Additional.iso как CD/DVD.",
+      "command": null,
+      "gui": "Виртуальная машина → Оборудование → CD/DVD → Использовать образ файла → Хранилище local → Additional.iso → ОК",
+      "check": "в оборудовании машины указан Additional.iso",
+      "pitfalls": [],
+      "image": "assets/img/image79.png",
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "6.5",
+      "title": "Имя CD-привода",
+      "action": "Найди имя CD-привода в системе.",
+      "command": "lsblk",
+      "gui": null,
+      "check": "в списке есть sr0 с признаком rom",
+      "pitfalls": ["имя привода может отличаться от sr0"],
+      "image": "assets/img/image80.png",
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "6.6",
+      "title": "Монтирование ISO",
+      "action": "Смонтируй образ в /mnt.",
+      "command": "mount /dev/sr0 /mnt/",
+      "gui": null,
+      "check": "ls /mnt показывает каталоги docker и web",
+      "pitfalls": [],
+      "image": "assets/img/image81.png",
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "6.7",
+      "title": "Файлы для Docker",
+      "action": "Посмотри, что лежит в каталоге docker образа.",
+      "command": "ls /mnt/docker/",
+      "gui": null,
+      "check": "видны mariadb_latest.tar и site_latest.tar",
+      "pitfalls": [],
+      "image": "assets/img/image82.png",
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "6.8",
+      "title": "Импорт образа MariaDB",
+      "action": "Загрузи образ базы в docker.",
+      "command": "docker load < /mnt/docker/mariadb_latest.tar",
+      "gui": null,
+      "check": "docker images показывает mariadb",
+      "pitfalls": [],
+      "image": "assets/img/image83.png",
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "6.9",
+      "title": "Импорт образа сайта",
+      "action": "Загрузи образ приложения в docker.",
+      "command": "docker load < /mnt/docker/site_latest.tar",
+      "gui": null,
+      "check": "docker images показывает образ сайта",
+      "pitfalls": [],
+      "image": null,
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "6.10",
+      "title": "Файл compose",
+      "action": "Скопируй compose.yaml в текущий каталог.",
+      "command": "sudo cp /mnt/compose.yaml .",
+      "gui": null,
+      "check": "compose.yaml лежит в текущем каталоге",
+      "pitfalls": ["файл берётся из корня /mnt, а не из /mnt/docker"],
+      "image": "assets/img/image84.png",
+      "requires": null,
+      "exclude": null
+    },
+    {
+      "id": "6.11",
+      "title": "Запуск контейнеров",
+      "action": "Подними контейнеры по compose-файлу.",
+      "command": "docker compose -f web.yaml up -d",
+      "gui": null,
+      "check": "docker ps показывает два контейнера, приложение отвечает на {{hosts.br-srv}}:{{docker.port}}",
+      "pitfalls": ["в методичке файл назван web.yaml, а скопирован compose.yaml"],
+      "image": "assets/img/image85.png",
+      "requires": null,
+      "exclude": null
+    }
+  ]
+}
