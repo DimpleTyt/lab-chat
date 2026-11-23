@@ -14,7 +14,7 @@ id -u "$USER_NAME" >/dev/null 2>&1 || useradd --system --home "$DST" --shell /us
 
 mkdir -p "$DST"
 rsync -a --delete \
-  --exclude .git --exclude .venv --exclude data \
+  --exclude .git --exclude .venv --exclude data --exclude build --exclude .env \
   "$SRC"/ "$DST"/
 
 [ -f "$DST/.env" ] || cp "$DST/.env.example" "$DST/.env"

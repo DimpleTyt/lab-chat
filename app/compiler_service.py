@@ -73,11 +73,8 @@ def sanitize_variant(variant: dict | None, preserve: set[str] | None = None) -> 
                 pass
     nfs = clean.get("nfs")
     if isinstance(nfs, dict):
-        for key in ("export", "server", "client_host"):
+        for key in ("server", "client_host"):
             nfs.pop(key, None)
-    ntp = clean.get("ntp")
-    if isinstance(ntp, dict):
-        ntp.pop("server", None)
     return clean
 
 

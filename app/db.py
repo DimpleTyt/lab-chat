@@ -32,6 +32,9 @@ CREATE TABLE IF NOT EXISTS chats (
     phase TEXT DEFAULT 'intake',
     intake_text TEXT,
     anchor_id TEXT,
+    pending_variant TEXT,
+    pending_sources TEXT,
+    pending_unknown TEXT,
     updated_at INTEGER
 );
 
@@ -85,6 +88,9 @@ def init_db() -> None:
             conn.execute("ALTER TABLE chats ADD COLUMN intake_text TEXT")
         if "anchor_id" not in columns:
             conn.execute("ALTER TABLE chats ADD COLUMN anchor_id TEXT")
+        for extra in ("pending_variant", "pending_sources", "pending_unknown"):
+            if extra not in columns:
+                conn.execute(f"ALTER TABLE chats ADD COLUMN {extra} TEXT")
 
 
 def get(sql: str, params: Iterable[Any] = ()) -> dict | None:

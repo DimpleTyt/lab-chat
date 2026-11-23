@@ -386,6 +386,10 @@ def collect_variant(params, intake, args):
     values = apply_parsed(default_values(params), parsed)
     if args.raid:
         values["storage.raid_level"] = args.raid
+        if not args.disks:
+            values["storage.disks"] = params.RAID_MIN.get(args.raid, 2)
+        if not args.mount:
+            values["storage.mount"] = "/raid%s" % args.raid
     if args.disks:
         values["storage.disks"] = args.disks
     if args.mount:

@@ -101,7 +101,8 @@ mdadm --create --verbose /dev/md0 -l 10 -n 4 /dev/sdb /dev/sdc /dev/sdd /dev/sde
 ## 6. HTTP API
 
 Все ответы JSON, ошибки `{"error": {"code": "...", "message": "..."}}`.
-Cookie-сессия `sid` (HttpOnly, SameSite=Lax, 12 часов).
+Cookie-сессия `sid` (HttpOnly, SameSite=Lax). Сервер держит сессию 1 час без
+активности и продлевает её на каждом запросе; cookie в браузере живёт 7 дней.
 
 | Метод | Путь | Тело | Ответ |
 |---|---|---|---|
@@ -114,6 +115,7 @@ Cookie-сессия `sid` (HttpOnly, SameSite=Lax, 12 часов).
 | POST | `/api/next` | `{client_msg_id}` | `{step, progress}` |
 | POST | `/api/jump` | `{to}` | `{step, progress}` |
 | POST | `/api/restart` | — | `{step, progress}` |
+| POST | `/api/intake/cancel` | — | `{phase, step, progress}` |
 | POST | `/api/variant` | `{variant}` | `{step, progress}` |
 
 `phase`: `intake` (задание не принято) → `confirm` (карточка показана) → `chat`.
@@ -162,7 +164,9 @@ users(id TEXT PK, username TEXT UNIQUE, pass_hash TEXT, display_name TEXT);
 auth_sessions(id TEXT PK, user_id TEXT, expires_at INTEGER);
 chats(user_id TEXT PK, variant TEXT, sources TEXT, unknown TEXT, plan TEXT,
       current_idx INTEGER DEFAULT 0, can_advance INTEGER DEFAULT 0,
-      phase TEXT DEFAULT 'intake', updated_at INTEGER);
+      phase TEXT DEFAULT 'intake', intake_text TEXT, anchor_id TEXT,
+      pending_variant TEXT, pending_sources TEXT, pending_unknown TEXT,
+      updated_at INTEGER);
 messages(id TEXT PK, user_id TEXT, role TEXT, kind TEXT, content TEXT,
          step_num INTEGER, created_at INTEGER);
 seen(user_id TEXT, client_msg_id TEXT, PRIMARY KEY(user_id, client_msg_id));
@@ -179,7 +183,7 @@ seen(user_id TEXT, client_msg_id TEXT, PRIMARY KEY(user_id, client_msg_id));
 `GET /models`), `MODEL_REASONER` (опционально, только для `error`).
 
 Первый шаг — дешёвый классификатор (non-stream, `temperature=0`,
-`max_tokens=30`, `response_format={"type":"json_object"}`):
+`max_tokens=200`, `response_format={"type":"json_object"}`):
 
 ```json
 {"intent": "question|error|jump|restart|advance|off_topic|edit_variant",
@@ -190,7 +194,7 @@ seen(user_id TEXT, client_msg_id TEXT, PRIMARY KEY(user_id, client_msg_id));
 → `advance`; `шаг N` / `N.N` → `jump`; `заново/с начала` → `restart`.
 
 Ответ на `question` / `error` / `off_topic` — стрим, `temperature=0.3`,
-`max_tokens=400`, системный промпт `app/prompt_system.md`.
+`max_tokens=500`, системный промпт `app/prompt_system.md`.
 
 Правила промпта: русский, максимум 4 строки, без приветствий и извинений,
 без забегания вперёд, команды строго из текущего шага, при ошибке —

@@ -8,6 +8,7 @@
     logout: '/api/logout',
     intake: '/api/intake',
     confirm: '/api/intake/confirm',
+    cancel: '/api/intake/cancel',
     chat: '/api/chat',
     next: '/api/next'
   };
@@ -442,6 +443,9 @@
       state.user = (data && data.user) || username;
       applyUser();
       armIdle();
+      state.lastIntakeText = '';
+      state.cardFields = [];
+      els.intakeText.value = '';
       els.loginPass.value = '';
       await loadState();
     } catch (err) {
@@ -581,12 +585,24 @@
     showView('intake');
   }
 
-  function cancelAssignmentEdit() {
+  async function cancelAssignmentEdit() {
     if (!state.editingFromChat) return;
-    state.editingFromChat = false;
-    els.intakeCancel.hidden = true;
-    els.intakeText.value = '';
-    showView('chat');
+    try {
+      var data = await api(API.cancel, { method: 'POST', body: {}, timeout: 10000 });
+      state.editingFromChat = false;
+      els.intakeCancel.hidden = true;
+      els.intakeText.value = '';
+      state.phase = (data && data.phase) || 'chat';
+      if (data && data.step) {
+        state.step = data.step;
+        updateHeader(data.step);
+      }
+      if (data && data.progress) applyProgress(data.progress);
+      showView(state.phase === 'chat' ? 'chat' : 'intake');
+      if (state.phase !== 'chat') showIntakeForm();
+    } catch (err) {
+      setError(els.intakeCardError, err.message);
+    }
   }
 
   function skipIntake() {

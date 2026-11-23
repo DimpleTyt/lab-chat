@@ -20,6 +20,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from . import auth, compiler_service, db, intake as intake_parser, llm
 from .compiler_service import CompileError
 from .config import ROOT, settings
+from shared.params import RAID_MIN, deep_merge
 
 logging.basicConfig(
     level=logging.INFO,
@@ -57,11 +58,11 @@ class ConfirmIn(BaseModel):
 
 class ChatIn(BaseModel):
     text: str
-    client_msg_id: str | None = None
+    client_msg_id: str = Field(min_length=1)
 
 
 class NextIn(BaseModel):
-    client_msg_id: str | None = None
+    client_msg_id: str = Field(min_length=1)
 
 
 class JumpIn(BaseModel):
@@ -119,6 +120,7 @@ CHAT_COLUMNS = {
     "variant", "sources", "unknown", "plan",
     "current_idx", "can_advance", "phase",
     "intake_text", "anchor_id",
+    "pending_variant", "pending_sources", "pending_unknown",
 }
 
 
@@ -179,12 +181,37 @@ def _sse(event: str, data: dict) -> str:
 
 
 def _compile_or_400(variant: dict | None, preserve: set[str] | None = None):
+    _validate_variant_input(variant)
     try:
         return compiler_service.compile_variant(variant, preserve)
     except CompileError as exc:
         raise HTTPException(
             400, detail={"code": "compile_error", "message": str(exc)}
         ) from exc
+
+
+def _validate_variant_input(variant: dict | None) -> None:
+    data = variant or {}
+    storage = data.get("storage") or {}
+    if "raid_level" in storage:
+        try:
+            level = int(storage["raid_level"])
+        except (TypeError, ValueError):
+            level = -1
+        if level not in RAID_MIN:
+            raise HTTPException(
+                400,
+                detail={
+                    "code": "bad_raid",
+                    "message": "RAID %s не поддерживается: %s"
+                    % (storage.get("raid_level"), ", ".join(str(x) for x in sorted(RAID_MIN))),
+                },
+            )
+    modules = data.get("modules")
+    if modules is not None and not list(modules or []):
+        raise HTTPException(
+            400, detail={"code": "no_modules", "message": "Список модулей пуст"}
+        )
 
 
 VARIANT_PATHS: tuple[tuple[str, ...], ...] = (
@@ -287,12 +314,9 @@ def _save_intake(user_id: str, result: dict, text: str = "") -> None:
     anchor = old_plan[stored - 1].get("id") if 1 <= stored <= len(old_plan) else None
     _update_chat(
         user_id,
-        variant=_json_dump(result["variant"]),
-        sources=_json_dump(result["sources"]),
-        unknown=_json_dump(result["unknown"]),
-        plan=None,
-        current_idx=0,
-        can_advance=0,
+        pending_variant=_json_dump(result["variant"]),
+        pending_sources=_json_dump(result["sources"]),
+        pending_unknown=_json_dump(result["unknown"]),
         phase="confirm",
         intake_text=text,
         anchor_id=anchor,
@@ -390,6 +414,7 @@ def _chat_events(user: dict, chat: dict, plan: list[dict], text: str) -> Iterato
     # ---- question / error / off_topic: stream the model, step stays ---- #
     model = llm.model_for(intent)
     yield _sse("meta", {"intent": intent, "step_num": idx, "model": model})
+    history = _history(user_id)
     _save_message(user_id, "user", intent, text, idx)
 
     pieces: list[str] = []
@@ -399,7 +424,7 @@ def _chat_events(user: dict, chat: dict, plan: list[dict], text: str) -> Iterato
             intent,
             context=context,
             step=raw_step,
-            history=_history(user_id),
+            history=history,
         ):
             if not piece:
                 continue
@@ -440,6 +465,14 @@ async def log_requests(request: Request, call_next):
     started = time.perf_counter()
     response = await call_next(request)
     elapsed = (time.perf_counter() - started) * 1000
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+        "script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'",
+    )
     log.info("%s %s -> %s (%.0f ms)", request.method, request.url.path, response.status_code, elapsed)
     return response
 
@@ -512,12 +545,22 @@ def get_state(user: dict = Depends(auth.current_user)):
     chat = _ensure_chat(user["id"])
     plan = compiler_service.plan_from_json(chat["plan"])
     idx = int(chat["current_idx"] or 0)
+    phase = chat["phase"] or "intake"
+    variant = _json_load(chat["variant"], None)
+    sources = _json_load(chat["sources"], {})
+    unknown = _json_load(chat["unknown"], [])
+    if phase == "confirm":
+        pending = _json_load(chat["pending_variant"], None)
+        if pending:
+            variant = pending
+            sources = _json_load(chat["pending_sources"], {})
+            unknown = _json_load(chat["pending_unknown"], [])
     return {
         "user": user,
-        "phase": chat["phase"] or "intake",
-        "variant": _json_load(chat["variant"], None),
-        "sources": _json_load(chat["sources"], {}),
-        "unknown": _json_load(chat["unknown"], []),
+        "phase": phase,
+        "variant": variant,
+        "sources": sources,
+        "unknown": unknown,
         "intake_text": chat["intake_text"] or "",
         "progress": _progress(idx, len(plan), bool(chat["can_advance"])),
         "step": compiler_service.step_payload(plan, idx),
@@ -543,9 +586,21 @@ def intake(payload: IntakeIn, user: dict = Depends(auth.current_user)):
 def intake_confirm(payload: ConfirmIn, user: dict = Depends(auth.current_user)):
     chat = _ensure_chat(user["id"])
     previous = _json_load(chat["variant"], {}) or {}
-    changes = _variant_changes(previous, payload.variant)
+    pending = _json_load(chat["pending_variant"], None)
+    base = pending if isinstance(pending, dict) and pending else previous
+    incoming = deep_merge(base, payload.variant or {})
+
+    changes = _variant_changes(previous, incoming)
+
+    # A new mount invalidates an automatically derived NFS export. Keep the
+    # export only when the user edited it explicitly.
+    if "storage.mount" in changes and "nfs.export" not in changes:
+        nfs = incoming.get("nfs")
+        if isinstance(nfs, dict):
+            nfs.pop("export", None)
+
     preserve = {"storage.mount"} if "storage.mount" in changes else set()
-    plan, normalized = _compile_or_400(payload.variant, preserve)
+    plan, normalized = _compile_or_400(incoming, preserve)
 
     # Re-confirming the same variant must not throw the user back to step 1
     # (double click, reload, second tab). A real change keeps the current step
@@ -567,7 +622,8 @@ def intake_confirm(payload: ConfirmIn, user: dict = Depends(auth.current_user)):
     else:
         idx = 1 if plan else 0
     can_advance = 1 if plan else 0
-    sources = _apply_user_sources(_json_load(chat["sources"], []), changes, normalized)
+    base_sources = _json_load(chat["pending_sources"], None) or _json_load(chat["sources"], [])
+    sources = _apply_user_sources(base_sources, changes, normalized)
     _update_chat(
         user["id"],
         variant=_json_dump(normalized),
@@ -577,6 +633,9 @@ def intake_confirm(payload: ConfirmIn, user: dict = Depends(auth.current_user)):
         can_advance=can_advance,
         phase="chat",
         anchor_id=None,
+        pending_variant=None,
+        pending_sources=None,
+        pending_unknown=None,
     )
     if changes:
         log.info("confirm user=%s steps=%s idx=%s manual=%s", user["id"], len(plan), idx, sorted(changes))
@@ -585,7 +644,25 @@ def intake_confirm(payload: ConfirmIn, user: dict = Depends(auth.current_user)):
     return _step_response(user["id"], plan, idx, bool(can_advance))
 
 
-# ------------------------------ chat --------------------------------------- #
+@app.post("/api/intake/cancel")
+def intake_cancel(user: dict = Depends(auth.current_user)):
+    """Abort assignment editing and go back to the current plan."""
+    chat = _ensure_chat(user["id"])
+    plan = compiler_service.plan_from_json(chat["plan"])
+    phase = "chat" if plan else "intake"
+    _update_chat(
+        user["id"],
+        phase=phase,
+        pending_variant=None,
+        pending_sources=None,
+        pending_unknown=None,
+    )
+    idx = int(chat["current_idx"] or 0)
+    return {
+        "phase": phase,
+        "step": compiler_service.step_payload(plan, idx),
+        "progress": _progress(idx, len(plan), bool(chat["can_advance"])),
+    }
 @app.post("/api/chat")
 def chat(payload: ChatIn, user: dict = Depends(auth.current_user)):
     text = (payload.text or "").strip()

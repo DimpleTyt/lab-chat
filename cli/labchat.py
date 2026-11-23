@@ -103,11 +103,16 @@ class Client:
     def _error(self, status, text):
         message = text
         try:
-            detail = json.loads(text).get("detail")
-            if isinstance(detail, dict):
-                message = detail.get("message") or text
+            payload = json.loads(text)
         except ValueError:
-            pass
+            return ApiError(status, message)
+        detail = payload.get("detail")
+        if isinstance(detail, dict):
+            message = detail.get("message") or message
+        else:
+            error = payload.get("error")
+            if isinstance(error, dict) and error.get("message"):
+                message = error["message"]
         return ApiError(status, message)
 
     # -- low level ---------------------------------------------------------
@@ -438,6 +443,7 @@ def loop(client, state):
         except ApiError as exc:
             print(Color.wrap(RED, "Ошибка: ") + str(exc))
             return
+        state = client.state()
     else:
         step = state.get("step")
         if step:
@@ -471,8 +477,6 @@ def loop(client, state):
             print("Вышел.")
             return
         if text == "/variant":
-            if last_step:
-                client.restart()
             run_intake(client)
             last_step = client.state().get("step")
             continue
@@ -574,6 +578,12 @@ def main():
     client = Client(args.server)
     try:
         state = ensure_login(client, args.user, args.password)
+    except KeyboardInterrupt:
+        print()
+        return 0
+    except EOFError:
+        print()
+        return 0
     except ApiError as exc:
         print(Color.wrap(RED, "Вход не удался: ") + str(exc))
         return 1

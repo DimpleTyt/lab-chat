@@ -62,7 +62,14 @@ systemctl disable --now lab-chat
 - `data/app.db` — пользователи, сессии, прогресс, сообщения.
 - `content/modules/*.json` — шаги. Правка шаблона не ломает сохранённые планы:
   у пользователя остаётся скомпилированный план до пересборки.
-- Бэкап: `cp data/app.db data/app.db.$(date +%F)`.
+- Бэкап (WAL нельзя копировать через `cp`):
+
+```bash
+sqlite3 /opt/lab-chat/data/app.db ".backup '/opt/lab-chat/data/app.db.$(date +%F)'"
+```
+
+- Восстановление: остановить сервис, положить файл на место `app.db`,
+  удалить `app.db-wal` и `app.db-shm`, запустить сервис.
 
 ## 6. Типичные проблемы
 
