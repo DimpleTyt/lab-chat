@@ -338,131 +338,25 @@ def ensure_login(client, username=None, password=None):
             username = password = None
 
 
-NUMERIC_KEYS = {"storage.raid_level", "storage.disks", "docker.port", "ntp.stratum"}
-
-
-def get_path(data, path):
-    node = data
-    for part in path.split("."):
-        if not isinstance(node, dict):
-            return None
-        node = node.get(part)
-    return node
-
-
-def set_path(data, path, value):
-    parts = path.split(".")
-    node = data
-    for part in parts[:-1]:
-        node = node.setdefault(part, {})
-    node[parts[-1]] = value
-
-
-def print_sources(sources):
-    print()
-    print(rule())
-    print(Color.wrap(BOLD, "Параметры задания"))
-    for index, item in enumerate(sources, 1):
-        label = (item.get("label") or item.get("key") or "?")[:22]
-        value = str(item.get("value"))[:24]
-        source = item.get("source") or "exam"
-        mark = {"method": "методичка", "model": "модель", "user": "правка"}.get(source, "задание")
-        print("  %2d) %-22s %-24s %s" % (index, label, value, Color.wrap(DIM, mark)))
-    print(rule())
-    print(Color.wrap(DIM, "Enter — всё верно. Номер строки — изменить. /text — ввести задание заново."))
-
-
-def edit_sources(sources):
-    rows = [dict(item) for item in sources]
-    manual = set()
-    raid_min = {0: 2, 1: 2, 5: 3, 6: 4, 10: 4}
-
-    def row_by_key(key):
-        for row in rows:
-            if row.get("key") == key:
-                return row
-        return None
-
-    while True:
-        print_sources(rows)
-        answer = ask("Номер строки: ").strip().lower()
-        if answer in ("/quit", "/exit", "/q"):
-            print()
-            raise SystemExit(0)
-        if not answer:
-            raid = row_by_key("storage.raid_level")
-            disks = row_by_key("storage.disks")
-            if raid and disks:
-                try:
-                    minimum = raid_min.get(int(raid["value"]), 2)
-                    if int(disks["value"]) < minimum:
-                        print(Color.wrap(RED, "Для RAID %s нужно минимум %s дисков." % (
-                            raid["value"], minimum)))
-                        continue
-                except (TypeError, ValueError):
-                    print(Color.wrap(RED, "RAID и диски должны быть числами."))
-                    continue
-            break
-        if answer == "/text":
-            return None
-        if not answer.isdigit():
-            continue
-        number = int(answer)
-        if not 1 <= number <= len(rows):
-            continue
-        row = rows[number - 1]
-        label = row.get("label") or row.get("key")
-        raw = ask("%s [%s]: " % (label, row.get("value"))).strip()
-        if not raw:
-            continue
-        key = row.get("key") or ""
-        value = raw
-        if key in NUMERIC_KEYS or isinstance(row.get("value"), int):
-            try:
-                value = int(raw)
-            except ValueError:
-                print(Color.wrap(RED, "Нужно число."))
-                continue
-        row["value"] = value
-        row["source"] = "user"
-        manual.add(key)
-
-        if key == "storage.raid_level":
-            level = int(value)
-            disks_row = row_by_key("storage.disks")
-            mount_row = row_by_key("storage.mount")
-            if disks_row is not None and "storage.disks" not in manual:
-                disks_row["value"] = raid_min.get(level, 2)
-                disks_row["source"] = "user"
-            if mount_row is not None and "storage.mount" not in manual:
-                mount_row["value"] = "/raid%s" % level
-                mount_row["source"] = "user"
-
-    variant = {}
-    for row in rows:
-        key = row.get("key")
-        if key:
-            set_path(variant, key, row.get("value"))
-    return variant
-
-
 def run_intake(client):
     print()
-    print("Вставь текст задания одной строкой. Пусто — пойдём по методичке.")
+    print("Вставь текст задания. Одна строка, Enter в конце.")
     text = ask("> ").strip()
+    if not text:
+        print(Color.wrap(YELLOW, "Пустое задание — идём по методичке."))
     while True:
         data = client.intake(text)
-        variant = edit_sources(data.get("sources") or [])
-        if variant is None:
-            text = ask("Задание: ").strip()
-            continue
-        result = client.confirm(variant)
-        step = result.get("step")
-        if step:
-            step["_server"] = client.server
-            print_step(step)
-            print_progress(result.get("progress"))
-        return
+        print_card(data)
+        answer = ask("Всё верно? [Y/n] ").strip().lower()
+        if answer in ("", "y", "yes", "д", "да"):
+            result = client.confirm(data.get("variant") or {})
+            step = result.get("step")
+            if step:
+                step["_server"] = client.server
+                print_step(step)
+                print_progress(result.get("progress"))
+            return
+        text = ask("Задание: ").strip()
 
 
 def loop(client, state):
