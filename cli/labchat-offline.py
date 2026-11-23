@@ -30,6 +30,18 @@ class Color:
         return text if not cls.enabled else code + text + RESET
 
 
+def enable_windows_ansi():
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+
+        kernel = ctypes.windll.kernel32
+        kernel.SetConsoleMode(kernel.GetStdHandle(-11), 7)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def bootstrap():
     data = json.loads(zlib.decompress(base64.b64decode(BUNDLE)).decode("utf-8"))
     src = data["src"]
@@ -252,6 +264,8 @@ def main():
 
     if args.no_color or args.selftest:
         Color.enabled = False
+    else:
+        enable_windows_ansi()
 
     params, compiler, intake, modules, bundle = bootstrap()
 

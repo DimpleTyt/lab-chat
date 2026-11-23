@@ -40,6 +40,19 @@ class Color:
         return code + text + RESET
 
 
+def enable_windows_ansi():
+    """Make cmd.exe and PowerShell understand ANSI colors."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+
+        kernel = ctypes.windll.kernel32
+        kernel.SetConsoleMode(kernel.GetStdHandle(-11), 7)
+    except Exception:  # noqa: BLE001 - colors are cosmetic
+        pass
+
+
 class ApiError(Exception):
     def __init__(self, status, message):
         super().__init__(message)
@@ -461,6 +474,8 @@ def main():
 
     if args.no_color:
         Color.enabled = False
+    else:
+        enable_windows_ansi()
 
     if args.insecure:
         global SSL_CONTEXT
