@@ -23,6 +23,7 @@
     sources: null,
     unknown: [],
     lastIntakeText: '',
+    editingFromChat: false,
     cardFields: [],
     streaming: false,
     intakeBusy: false,
@@ -48,12 +49,14 @@
     intakeText: document.getElementById('intake-text'),
     intakeError: document.getElementById('intake-error'),
     intakeSubmit: document.getElementById('intake-submit'),
+    intakeCancel: document.getElementById('intake-cancel'),
     intakeCard: document.getElementById('intake-card'),
     intakeCardError: document.getElementById('intake-card-error'),
 
     chatView: document.getElementById('view-chat'),
     chatUser: document.getElementById('chat-user'),
     chatLogout: document.getElementById('chat-logout'),
+    chatEdit: document.getElementById('chat-edit'),
     chatStepLabel: document.getElementById('chat-step-label'),
     chatProgress: document.getElementById('chat-progress'),
     chatFeedWrap: document.getElementById('chat-feed-wrap'),
@@ -469,6 +472,7 @@
     state.streaming = false;
     state.intakeBusy = false;
     state.lastIntakeText = '';
+    state.editingFromChat = false;
     state.cardFields = [];
     state.model = '';
 
@@ -520,6 +524,7 @@
     state.variant = data.variant || null;
     state.sources = data.sources || null;
     state.unknown = data.unknown || [];
+    if (data.intake_text) state.lastIntakeText = data.intake_text;
 
     applyProgress(data.progress);
 
@@ -556,6 +561,7 @@
     els.intakeCard.innerHTML = '';
     state.cardFields = [];
     setError(els.intakeCardError, '');
+    els.intakeCancel.hidden = !state.editingFromChat;
     if (!els.intakeText.value && state.lastIntakeText) {
       els.intakeText.value = state.lastIntakeText;
     }
@@ -566,6 +572,20 @@
         els.intakeText.setSelectionRange(len, len);
       } catch (e) { /* поле ещё не в фокусе */ }
     }, 40);
+  }
+
+  function startAssignmentEdit() {
+    state.editingFromChat = true;
+    showIntakeForm();
+    showView('intake');
+  }
+
+  function cancelAssignmentEdit() {
+    if (!state.editingFromChat) return;
+    state.editingFromChat = false;
+    els.intakeCancel.hidden = true;
+    els.intakeText.value = '';
+    showView('chat');
   }
 
   function setIntakeBusy(busy) {
@@ -639,6 +659,7 @@
         timeout: 30000
       });
       state.cardFields = [];
+      state.editingFromChat = false;
       state.phase = 'chat';
       clearFeed();
       if (data && data.progress) applyProgress(data.progress);
@@ -1621,6 +1642,8 @@
   function bind() {
     els.loginForm.addEventListener('submit', onLogin);
     els.intakeSubmit.addEventListener('click', submitIntake);
+    els.intakeCancel.addEventListener('click', cancelAssignmentEdit);
+    els.chatEdit.addEventListener('click', startAssignmentEdit);
     els.chatNext.addEventListener('click', nextStep);
     els.intakeLogout.addEventListener('click', logout);
     els.chatLogout.addEventListener('click', logout);

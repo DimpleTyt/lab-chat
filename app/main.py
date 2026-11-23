@@ -118,6 +118,7 @@ def _ensure_chat(user_id: str) -> dict:
 CHAT_COLUMNS = {
     "variant", "sources", "unknown", "plan",
     "current_idx", "can_advance", "phase",
+    "intake_text", "anchor_id",
 }
 
 
@@ -279,7 +280,11 @@ def _step_response(user_id: str, plan: list[dict], idx: int, can_advance: bool) 
     }
 
 
-def _save_intake(user_id: str, result: dict) -> None:
+def _save_intake(user_id: str, result: dict, text: str = "") -> None:
+    chat = _ensure_chat(user_id)
+    old_plan = compiler_service.plan_from_json(chat["plan"])
+    stored = int(chat["current_idx"] or 0)
+    anchor = old_plan[stored - 1].get("id") if 1 <= stored <= len(old_plan) else None
     _update_chat(
         user_id,
         variant=_json_dump(result["variant"]),
@@ -289,6 +294,8 @@ def _save_intake(user_id: str, result: dict) -> None:
         current_idx=0,
         can_advance=0,
         phase="confirm",
+        intake_text=text,
+        anchor_id=anchor,
     )
 
 
@@ -296,7 +303,7 @@ def _intake_stream(user_id: str, text: str) -> StreamingResponse:
     chat = _ensure_chat(user_id)
     base = _json_load(chat["variant"], {}) or {}
     result = intake_parser.parse_assignment(text, base)
-    _save_intake(user_id, result)
+    _save_intake(user_id, result, text)
     _save_message(user_id, "user", "edit_variant", text, 0)
 
     meta = {"intent": "edit_variant", "step_num": 0, "model": llm.model_for()}
@@ -511,6 +518,7 @@ def get_state(user: dict = Depends(auth.current_user)):
         "variant": _json_load(chat["variant"], None),
         "sources": _json_load(chat["sources"], {}),
         "unknown": _json_load(chat["unknown"], []),
+        "intake_text": chat["intake_text"] or "",
         "progress": _progress(idx, len(plan), bool(chat["can_advance"])),
         "step": compiler_service.step_payload(plan, idx),
     }
@@ -525,7 +533,7 @@ def intake(payload: IntakeIn, user: dict = Depends(auth.current_user)):
     chat = _ensure_chat(user["id"])
     base = _json_load(chat["variant"], {}) or {}
     result = intake_parser.parse_assignment(text, base)
-    _save_intake(user["id"], result)
+    _save_intake(user["id"], result, text)
     _save_message(user["id"], "user", "intake", text, 0)
     log.info("intake user=%s sources=%s", user["id"], len(result["sources"]))
     return result
@@ -540,10 +548,24 @@ def intake_confirm(payload: ConfirmIn, user: dict = Depends(auth.current_user)):
     plan, normalized = _compile_or_400(payload.variant, preserve)
 
     # Re-confirming the same variant must not throw the user back to step 1
-    # (double click, reload, second tab). Only a real change restarts the plan.
+    # (double click, reload, second tab). A real change keeps the current step
+    # when its id still exists in the new plan.
+    old_plan = compiler_service.plan_from_json(chat["plan"])
     stored = int(chat["current_idx"] or 0)
+    anchor_id = chat["anchor_id"] or None
+    if 1 <= stored <= len(old_plan):
+        anchor_id = old_plan[stored - 1].get("id")
+
     same_plan = bool(plan) and chat["phase"] == "chat" and not changes and 1 <= stored <= len(plan)
-    idx = min(stored, len(plan)) if same_plan else (1 if plan else 0)
+    if same_plan:
+        idx = min(stored, len(plan))
+    elif plan and anchor_id:
+        idx = next(
+            (position for position, step in enumerate(plan, start=1) if step.get("id") == anchor_id),
+            1,
+        )
+    else:
+        idx = 1 if plan else 0
     can_advance = 1 if plan else 0
     sources = _apply_user_sources(_json_load(chat["sources"], []), changes, normalized)
     _update_chat(
@@ -554,6 +576,7 @@ def intake_confirm(payload: ConfirmIn, user: dict = Depends(auth.current_user)):
         current_idx=idx,
         can_advance=can_advance,
         phase="chat",
+        anchor_id=None,
     )
     if changes:
         log.info("confirm user=%s steps=%s idx=%s manual=%s", user["id"], len(plan), idx, sorted(changes))

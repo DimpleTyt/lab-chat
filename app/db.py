@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS chats (
     current_idx INTEGER DEFAULT 0,
     can_advance INTEGER DEFAULT 0,
     phase TEXT DEFAULT 'intake',
+    intake_text TEXT,
+    anchor_id TEXT,
     updated_at INTEGER
 );
 
@@ -78,6 +80,11 @@ def init_db() -> None:
         conn.execute("PRAGMA journal_mode = WAL")
         conn.execute("PRAGMA synchronous = NORMAL")
         conn.executescript(SCHEMA)
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(chats)")}
+        if "intake_text" not in columns:
+            conn.execute("ALTER TABLE chats ADD COLUMN intake_text TEXT")
+        if "anchor_id" not in columns:
+            conn.execute("ALTER TABLE chats ADD COLUMN anchor_id TEXT")
 
 
 def get(sql: str, params: Iterable[Any] = ()) -> dict | None:
