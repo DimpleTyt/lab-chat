@@ -28,4 +28,6 @@ def step_brief(step):
         parts.append(f"GUI: {step['gui']}")
     if step.get("check"):
         parts.append(f"Критерий: {step['check']}")
+    if step.get("pitfalls"):
+        parts.append("Известные особенности: " + "; ".join(step["pitfalls"]))
     return "\n".join(parts)
