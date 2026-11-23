@@ -366,9 +366,7 @@
       setStep(data.step, { scroll: true });
     } catch (err) {
       if (err.status === 401) {
-        state.user = null;
-        showView('login');
-        setError(els.loginError, 'Сессия истекла, войди снова');
+        forceLogin('Сессия истекла, войди снова');
       }
     }
   }
@@ -502,17 +500,22 @@
 
   /* ─── Состояние с сервера ─────────────────────────────────── */
 
+  function forceLogin(message) {
+    resetClient();
+    showView('login');
+    if (message) setError(els.loginError, message);
+  }
+
   async function loadState() {
     try {
       var data = await api(API.state, { timeout: 12000 });
       applyState(data);
     } catch (err) {
       if (err.status === 401) {
-        showView('login');
+        forceLogin('');
         return;
       }
-      showView('login');
-      setError(els.loginError, err.message);
+      forceLogin(err.message);
     }
   }
 
@@ -654,8 +657,7 @@
       );
     } catch (err) {
       if (err.status === 401) {
-        showView('login');
-        setError(els.loginError, 'Сессия истекла, войди снова');
+        forceLogin('Сессия истекла, войди снова');
       } else {
         setError(els.intakeError, err.message);
       }
@@ -696,8 +698,7 @@
       scrollToBottom(true);
     } catch (err) {
       if (err.status === 401) {
-        showView('login');
-        setError(els.loginError, 'Сессия истекла, войди снова');
+        forceLogin('Сессия истекла, войди снова');
       } else {
         showCardError(err.message);
       }
@@ -1428,9 +1429,7 @@
       await streamChat(text, clientId, bubble);
     } catch (err) {
       if (err.status === 401) {
-        state.user = null;
-        showView('login');
-        setError(els.loginError, 'Сессия истекла, войди снова');
+        forceLogin('Сессия истекла, войди снова');
       } else if (err.status === 409) {
         appendError('уже отправлено');
       } else {
@@ -1638,9 +1637,7 @@
       if (data && data.progress) applyProgress(data.progress);
     } catch (err) {
       if (err.status === 401) {
-        state.user = null;
-        showView('login');
-        setError(els.loginError, 'Сессия истекла, войди снова');
+        forceLogin('Сессия истекла, войди снова');
       } else if (err.status === 409) {
         appendError('шаг ещё не подтверждён');
       } else {

@@ -384,7 +384,7 @@ def collect_variant(params, intake, args):
         raise SystemExit(0)
     parsed = intake.parse_assignment(text) if text else {}
     values = apply_parsed(default_values(params), parsed)
-    if args.raid:
+    if args.raid is not None:
         values["storage.raid_level"] = args.raid
         if not args.disks:
             values["storage.disks"] = params.RAID_MIN.get(args.raid, 2)

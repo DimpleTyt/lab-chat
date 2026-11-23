@@ -8,7 +8,7 @@ DST=/opt/lab-chat
 USER_NAME=labchat
 
 apt-get update
-apt-get install -y python3 python3-venv python3-pip rsync
+apt-get install -y python3 python3-venv python3-pip rsync sqlite3
 
 id -u "$USER_NAME" >/dev/null 2>&1 || useradd --system --home "$DST" --shell /usr/sbin/nologin "$USER_NAME"
 

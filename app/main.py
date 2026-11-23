@@ -183,16 +183,26 @@ def _sse(event: str, data: dict) -> str:
 def _compile_or_400(variant: dict | None, preserve: set[str] | None = None):
     _validate_variant_input(variant)
     try:
-        return compiler_service.compile_variant(variant, preserve)
+        plan, normalized = compiler_service.compile_variant(variant, preserve)
     except CompileError as exc:
         raise HTTPException(
             400, detail={"code": "compile_error", "message": str(exc)}
         ) from exc
+    if not plan:
+        raise HTTPException(
+            400, detail={"code": "empty_plan", "message": "Под такие параметры шагов нет"}
+        )
+    return plan, normalized
 
 
 def _validate_variant_input(variant: dict | None) -> None:
+    if variant is not None and not isinstance(variant, dict):
+        raise HTTPException(400, detail={"code": "bad_variant", "message": "variant должен быть объектом"})
     data = variant or {}
-    storage = data.get("storage") or {}
+    storage = data.get("storage")
+    if storage is not None and not isinstance(storage, dict):
+        raise HTTPException(400, detail={"code": "bad_storage", "message": "storage должен быть объектом"})
+    storage = storage or {}
     if "raid_level" in storage:
         try:
             level = int(storage["raid_level"])
@@ -208,10 +218,15 @@ def _validate_variant_input(variant: dict | None) -> None:
                 },
             )
     modules = data.get("modules")
-    if modules is not None and not list(modules or []):
-        raise HTTPException(
-            400, detail={"code": "no_modules", "message": "Список модулей пуст"}
-        )
+    if modules is not None:
+        if not isinstance(modules, (list, tuple)) or not modules:
+            raise HTTPException(
+                400, detail={"code": "no_modules", "message": "Список модулей пуст"}
+            )
+        if not all(str(item).isdigit() for item in modules):
+            raise HTTPException(
+                400, detail={"code": "bad_modules", "message": "Модули должны быть числами"}
+            )
 
 
 VARIANT_PATHS: tuple[tuple[str, ...], ...] = (
@@ -223,6 +238,7 @@ VARIANT_PATHS: tuple[tuple[str, ...], ...] = (
     ("storage", "mount"),
     ("storage", "md"),
     ("nfs", "clients"),
+    ("nfs", "export"),
     ("ntp", "server"),
     ("ntp", "stratum"),
     ("docker", "port"),
@@ -590,7 +606,9 @@ def intake_confirm(payload: ConfirmIn, user: dict = Depends(auth.current_user)):
     base = pending if isinstance(pending, dict) and pending else previous
     incoming = deep_merge(base, payload.variant or {})
 
-    changes = _variant_changes(previous, incoming)
+    # Compare against the base the user actually saw, not an empty variant:
+    # otherwise every field looks "edited" after the first confirmation.
+    changes = _variant_changes(base, incoming)
 
     # A new mount invalidates an automatically derived NFS export. Keep the
     # export only when the user edited it explicitly.
@@ -668,7 +686,9 @@ def chat(payload: ChatIn, user: dict = Depends(auth.current_user)):
     text = (payload.text or "").strip()
     if not text:
         raise HTTPException(400, detail={"code": "empty_text", "message": "Пустое сообщение"})
-    client_msg_id = (payload.client_msg_id or "").strip() or None
+    client_msg_id = (payload.client_msg_id or "").strip()
+    if not client_msg_id:
+        raise HTTPException(400, detail={"code": "empty_id", "message": "client_msg_id пуст"})
     if not _mark_seen(user["id"], client_msg_id):
         raise HTTPException(
             409, detail={"code": "duplicate", "message": "Это сообщение уже обработано"}
@@ -688,7 +708,10 @@ def chat(payload: ChatIn, user: dict = Depends(auth.current_user)):
 # --------------------------- navigation ------------------------------------ #
 @app.post("/api/next")
 def next_step(payload: NextIn, user: dict = Depends(auth.current_user)):
-    if not _mark_seen(user["id"], payload.client_msg_id):
+    client_msg_id = (payload.client_msg_id or "").strip()
+    if not client_msg_id:
+        raise HTTPException(400, detail={"code": "empty_id", "message": "client_msg_id пуст"})
+    if not _mark_seen(user["id"], client_msg_id):
         raise HTTPException(
             409, detail={"code": "duplicate", "message": "Это сообщение уже обработано"}
         )
@@ -736,9 +759,10 @@ def restart(user: dict = Depends(auth.current_user)):
 def set_variant(payload: VariantIn, user: dict = Depends(auth.current_user)):
     chat = _ensure_chat(user["id"])
     previous = _json_load(chat["variant"], {}) or {}
-    changes = _variant_changes(previous, payload.variant)
+    incoming = deep_merge(previous, payload.variant or {})
+    changes = _variant_changes(previous, incoming)
     preserve = {"storage.mount"} if "storage.mount" in changes else set()
-    plan, normalized = _compile_or_400(payload.variant, preserve)
+    plan, normalized = _compile_or_400(incoming, preserve)
     idx = 1 if plan else 0
     can_advance = 1 if plan else 0
     sources = _apply_user_sources(_json_load(chat["sources"], []), changes, normalized)

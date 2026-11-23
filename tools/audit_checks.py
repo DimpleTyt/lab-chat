@@ -76,6 +76,30 @@ check("no md0 left in plan", not any("/dev/md0" in (s.get("command") or "") for 
 r = client.post("/api/chat", json={"text": "привет"})
 check("chat without client_msg_id rejected", r.status_code in (400, 422), r.status_code)
 
+# 8. changing RAID on the first confirm recomputes mount
+post("/api/intake", {"text": "RAID 5 из трёх дисков, /raid5."})
+post("/api/intake/confirm", {"variant": {"storage": {"raid_level": 1}}})
+st = client.get("/api/state").json()
+check("first confirm recomputes mount", st["variant"]["storage"]["mount"] == "/raid1", st["variant"]["storage"])
+
+# 9. explicit nfs.export survives a mount change
+post("/api/intake", {"text": "RAID 1 из двух дисков."})
+post("/api/intake/confirm", {"variant": {"storage": {"mount": "/data"}, "nfs": {"export": "/custom2"}}})
+st = client.get("/api/state").json()
+check("explicit nfs.export kept", st["variant"]["nfs"]["export"] == "/custom2", st["variant"]["nfs"]["export"])
+
+# 10. bad module list / types rejected
+r = post("/api/intake/confirm", {"variant": {"modules": [8]}})
+check("unknown module rejected", r.status_code == 400, r.status_code)
+r = post("/api/intake/confirm", {"variant": {"modules": 1}})
+check("non-list modules rejected", r.status_code == 400, r.status_code)
+r = post("/api/intake/confirm", {"variant": {"storage": 5}})
+check("non-dict storage rejected", r.status_code == 400, r.status_code)
+
+# 11. whitespace client_msg_id rejected
+r = client.post("/api/chat", json={"text": "привет", "client_msg_id": " "})
+check("whitespace client_msg_id rejected", r.status_code == 400, r.status_code)
+
 failed = [name for name, ok, _ in results if not ok]
 print("\nsummary:", len(results) - len(failed), "/", len(results), "passed")
 sys.exit(1 if failed else 0)
