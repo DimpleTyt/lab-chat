@@ -338,6 +338,41 @@
     document.addEventListener(name, armIdle, { passive: true });
   });
 
+  /* ─── Синхронизация с сервером между вкладками/клиентами ──── */
+  var lastSyncAt = 0;
+
+  async function syncProgress() {
+    if (!state.user || state.streaming) return;
+    if (document.visibilityState !== 'visible') return;
+    var now = Date.now();
+    if (now - lastSyncAt < 5000) return;
+    lastSyncAt = now;
+
+    try {
+      var data = await api(API.state, { timeout: 10000 });
+      if (data && data.progress) applyProgress(data.progress);
+      var serverNum = data && data.step ? data.step.num : 0;
+      var localNum = state.step ? state.step.num : 0;
+      if (!serverNum || serverNum === localNum) return;
+
+      state.phase = data.phase || state.phase;
+      state.variant = data.variant || state.variant;
+      appendSystem('Прогресс изменился в другом окне — шаг ' + serverNum + '.');
+      setStep(data.step, { scroll: true });
+    } catch (err) {
+      if (err.status === 401) {
+        state.user = null;
+        showView('login');
+        setError(els.loginError, 'Сессия истекла, войди снова');
+      }
+    }
+  }
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') syncProgress();
+  });
+  window.addEventListener('focus', syncProgress);
+
   function showView(name) {
     state.booted = true;
     state.view = name;

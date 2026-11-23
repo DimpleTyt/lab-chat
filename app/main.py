@@ -538,7 +538,12 @@ def intake_confirm(payload: ConfirmIn, user: dict = Depends(auth.current_user)):
     changes = _variant_changes(previous, payload.variant)
     preserve = {"storage.mount"} if "storage.mount" in changes else set()
     plan, normalized = _compile_or_400(payload.variant, preserve)
-    idx = 1 if plan else 0
+
+    # Re-confirming the same variant must not throw the user back to step 1
+    # (double click, reload, second tab). Only a real change restarts the plan.
+    stored = int(chat["current_idx"] or 0)
+    same_plan = bool(plan) and chat["phase"] == "chat" and not changes and 1 <= stored <= len(plan)
+    idx = min(stored, len(plan)) if same_plan else (1 if plan else 0)
     can_advance = 1 if plan else 0
     sources = _apply_user_sources(_json_load(chat["sources"], []), changes, normalized)
     _update_chat(
@@ -551,9 +556,9 @@ def intake_confirm(payload: ConfirmIn, user: dict = Depends(auth.current_user)):
         phase="chat",
     )
     if changes:
-        log.info("confirm user=%s steps=%s manual=%s", user["id"], len(plan), sorted(changes))
+        log.info("confirm user=%s steps=%s idx=%s manual=%s", user["id"], len(plan), idx, sorted(changes))
     else:
-        log.info("confirm user=%s steps=%s", user["id"], len(plan))
+        log.info("confirm user=%s steps=%s idx=%s", user["id"], len(plan), idx)
     return _step_response(user["id"], plan, idx, bool(can_advance))
 
 
