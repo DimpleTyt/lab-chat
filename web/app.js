@@ -50,6 +50,7 @@
     intakeError: document.getElementById('intake-error'),
     intakeSubmit: document.getElementById('intake-submit'),
     intakeCancel: document.getElementById('intake-cancel'),
+    intakeSkip: document.getElementById('intake-skip'),
     intakeCard: document.getElementById('intake-card'),
     intakeCardError: document.getElementById('intake-card-error'),
 
@@ -586,6 +587,11 @@
     els.intakeCancel.hidden = true;
     els.intakeText.value = '';
     showView('chat');
+  }
+
+  function skipIntake() {
+    els.intakeText.value = 'без задания';
+    submitIntake();
   }
 
   function setIntakeBusy(busy) {
@@ -1642,6 +1648,7 @@
   function bind() {
     els.loginForm.addEventListener('submit', onLogin);
     els.intakeSubmit.addEventListener('click', submitIntake);
+    els.intakeSkip.addEventListener('click', skipIntake);
     els.intakeCancel.addEventListener('click', cancelAssignmentEdit);
     els.chatEdit.addEventListener('click', startAssignmentEdit);
     els.chatNext.addEventListener('click', nextStep);

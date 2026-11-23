@@ -341,6 +341,9 @@ def _validate_model_variant(raw, taken: set[str]) -> tuple[dict, dict, list[str]
 def parse_assignment(text: str, base: dict | None = None) -> dict:
     """Return {variant, sources, unknown, warnings} for an assignment text."""
     text = (text or "").strip()
+    skipped = text.lower() in ("без задания", "по методичке", "нет задания", "нет")
+    if skipped:
+        text = ""
     t = _Text(text)
     warnings: list[str] = []
     sources: dict = {}
@@ -531,7 +534,7 @@ def parse_assignment(text: str, base: dict | None = None) -> dict:
             variant = normalize({})
             warnings.append("Собрать вариант не удалось — взяты значения по умолчанию.")
 
-    if not sources:
+    if not sources and not skipped:
         warnings.append("Параметры в тексте не распознаны — используются значения по умолчанию.")
 
     # --- lines that were not understood --------------------------------- #

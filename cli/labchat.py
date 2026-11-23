@@ -382,15 +382,14 @@ def ensure_login(client, username=None, password=None):
 
 def run_intake(client):
     print()
-    print("Вставь текст задания. Одна строка, Enter в конце.")
-    text = ""
-    while not text:
-        text = ask("> ").strip()
-        if text.lower() in ("/quit", "/exit", "/q"):
-            print()
-            raise SystemExit(0)
-        if not text:
-            print(Color.wrap(RED, "Вставь текст задания"))
+    print("Вставь текст задания. Одна строка, Enter — по методичке.")
+    text = ask("> ").strip()
+    if text.lower() in ("/quit", "/exit", "/q"):
+        print()
+        raise SystemExit(0)
+    if not text:
+        text = "без задания"
+        print(Color.wrap(DIM, "Идём по методичке."))
 
     while True:
         try:
@@ -420,9 +419,9 @@ def run_intake(client):
         if text.lower() in ("/quit", "/exit", "/q"):
             print()
             raise SystemExit(0)
-        while not text:
-            print(Color.wrap(RED, "Вставь текст задания"))
-            text = ask("Задание: ").strip()
+        if not text:
+            text = "без задания"
+            print(Color.wrap(DIM, "Идём по методичке."))
 
 
 def loop(client, state):
