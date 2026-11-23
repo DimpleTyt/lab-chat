@@ -352,7 +352,8 @@ def ask(prompt):
 
 
 def ensure_login(client, username=None, password=None):
-    sid = load_session(client.server)
+    # Explicit credentials win over a saved session.
+    sid = load_session(client.server) if not username else None
     if sid:
         client.sid = sid
         try:
@@ -382,21 +383,33 @@ def ensure_login(client, username=None, password=None):
 def run_intake(client):
     print()
     print("Вставь текст задания. Одна строка, Enter в конце.")
-    text = ask("> ").strip()
-    if text.lower() in ("/quit", "/exit", "/q"):
-        print()
-        raise SystemExit(0)
-    if not text:
-        print(Color.wrap(YELLOW, "Пустое задание — идём по методичке."))
+    text = ""
+    while not text:
+        text = ask("> ").strip()
+        if text.lower() in ("/quit", "/exit", "/q"):
+            print()
+            raise SystemExit(0)
+        if not text:
+            print(Color.wrap(RED, "Вставь текст задания"))
+
     while True:
-        data = client.intake(text)
+        try:
+            data = client.intake(text)
+        except ApiError as exc:
+            print(Color.wrap(RED, "Ошибка: ") + str(exc))
+            return
+
         print_card(data)
         answer = ask("Всё верно? [Y/n] ").strip().lower()
         if answer in ("/quit", "/exit", "/q"):
             print()
             raise SystemExit(0)
         if answer in ("", "y", "yes", "д", "да"):
-            result = client.confirm(data.get("variant") or {})
+            try:
+                result = client.confirm(data.get("variant") or {})
+            except ApiError as exc:
+                print(Color.wrap(RED, "Ошибка: ") + str(exc))
+                return
             step = result.get("step")
             if step:
                 step["_server"] = client.server
@@ -407,12 +420,19 @@ def run_intake(client):
         if text.lower() in ("/quit", "/exit", "/q"):
             print()
             raise SystemExit(0)
+        while not text:
+            print(Color.wrap(RED, "Вставь текст задания"))
+            text = ask("Задание: ").strip()
 
 
 def loop(client, state):
     phase = state.get("phase")
     if phase in ("intake", "confirm"):
-        run_intake(client)
+        try:
+            run_intake(client)
+        except ApiError as exc:
+            print(Color.wrap(RED, "Ошибка: ") + str(exc))
+            return
     else:
         step = state.get("step")
         if step:
@@ -558,6 +578,8 @@ def main():
         loop(client, state)
     except KeyboardInterrupt:
         print()
+    except ApiError as exc:
+        print(Color.wrap(RED, "Ошибка: ") + str(exc))
     return 0
 
 
