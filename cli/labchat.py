@@ -7,6 +7,7 @@ one-hour session are shared.
 """
 import argparse
 import getpass
+import http.client
 import json
 import os
 import re
@@ -15,6 +16,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urlsplit
 
 DEFAULT_SERVER = os.environ.get("LABCHAT_SERVER", "https://exam.nothing-box.com")
 SESSION_FILE = os.path.expanduser("~/.labchat/session.json")
@@ -62,53 +64,85 @@ class ApiError(Exception):
 class Client:
     def __init__(self, server):
         self.server = server.rstrip("/")
+        parsed = urlsplit(self.server)
+        self.scheme = parsed.scheme or "https"
+        self.host = parsed.hostname or ""
+        self.port = parsed.port or (443 if self.scheme == "https" else 80)
+        self.prefix = parsed.path.rstrip("/")
+        self.conn = None
         self.sid = None
         self.user = None
 
-    # -- low level ---------------------------------------------------------
-    def _request(self, path, payload=None, method=None):
-        url = self.server + path
-        data = json.dumps(payload).encode("utf-8") if payload is not None else None
-        request = urllib.request.Request(url, data=data, method=method)
-        request.add_header("Accept", "application/json")
-        if data is not None:
-            request.add_header("Content-Type", "application/json; charset=utf-8")
-        if self.sid:
-            request.add_header("Cookie", "sid=" + self.sid)
-        try:
-            response = urllib.request.urlopen(request, timeout=TIMEOUT, context=SSL_CONTEXT)
-        except urllib.error.HTTPError as exc:
-            body = exc.read().decode("utf-8", "replace")
-            message = body
+    # -- connection --------------------------------------------------------
+    def _connect(self):
+        if self.conn is None:
+            if self.scheme == "https":
+                self.conn = http.client.HTTPSConnection(
+                    self.host, self.port, timeout=TIMEOUT, context=SSL_CONTEXT
+                )
+            else:
+                self.conn = http.client.HTTPConnection(self.host, self.port, timeout=TIMEOUT)
+        return self.conn
+
+    def _drop(self):
+        if self.conn is not None:
             try:
-                detail = json.loads(body).get("detail")
-                if isinstance(detail, dict):
-                    message = detail.get("message") or body
-            except ValueError:
+                self.conn.close()
+            except Exception:  # noqa: BLE001
                 pass
-            raise ApiError(exc.code, message)
-        except urllib.error.URLError as exc:
-            raise ApiError(0, "нет связи с сервером: %s" % exc.reason)
+            self.conn = None
+
+    def _headers(self, extra=None):
+        headers = {"Accept": "application/json"}
+        if self.sid:
+            headers["Cookie"] = "sid=" + self.sid
+        if extra:
+            headers.update(extra)
+        return headers
+
+    def _error(self, status, text):
+        message = text
         try:
-            raw = response.read()
-            headers = response.headers
-        finally:
-            response.close()
-        return raw, headers
+            detail = json.loads(text).get("detail")
+            if isinstance(detail, dict):
+                message = detail.get("message") or text
+        except ValueError:
+            pass
+        return ApiError(status, message)
 
+    # -- low level ---------------------------------------------------------
     def _json(self, path, payload=None, method=None):
-        raw, headers = self._request(path, payload, method)
-        self._remember_cookie(headers)
-        text = raw.decode("utf-8", "replace")
-        return json.loads(text) if text.strip() else {}
+        body = json.dumps(payload).encode("utf-8") if payload is not None else None
+        extra = {"Content-Type": "application/json; charset=utf-8"} if body is not None else {}
+        for attempt in (1, 2):
+            try:
+                conn = self._connect()
+                conn.request(
+                    method or "GET", self.prefix + path, body=body, headers=self._headers(extra)
+                )
+                response = conn.getresponse()
+                raw = response.read()
+                self._remember_cookie(response)
+                if response.will_close:
+                    self._drop()
+                text = raw.decode("utf-8", "replace")
+                if response.status >= 400:
+                    raise self._error(response.status, text)
+                return json.loads(text) if text.strip() else {}
+            except (http.client.HTTPException, OSError) as exc:
+                self._drop()
+                if attempt == 1:
+                    continue
+                raise ApiError(0, "нет связи с сервером: %s" % exc)
+        return {}
 
-    def _remember_cookie(self, headers):
-        cookie = headers.get("Set-Cookie") or ""
+    def _remember_cookie(self, response):
+        cookie = response.getheader("Set-Cookie") or ""
         match = re.search(r"sid=([^;]+)", cookie)
         if match:
             self.sid = match.group(1)
             save_session(self.server, self.sid)
-        elif "sid=;" in cookie or "sid=," in cookie:
+        elif "sid=;" in cookie:
             self.sid = None
 
     # -- api ---------------------------------------------------------------
@@ -145,44 +179,51 @@ class Client:
 
     def chat(self, text, on_delta):
         payload = {"text": text, "client_msg_id": "%d" % time.time_ns()}
-        request = urllib.request.Request(
-            self.server + "/api/chat",
-            data=json.dumps(payload).encode("utf-8"),
-            method="POST",
-        )
-        request.add_header("Content-Type", "application/json; charset=utf-8")
-        request.add_header("Accept", "text/event-stream")
-        if self.sid:
-            request.add_header("Cookie", "sid=" + self.sid)
-        try:
-            response = urllib.request.urlopen(request, timeout=TIMEOUT, context=SSL_CONTEXT)
-        except urllib.error.HTTPError as exc:
-            raise ApiError(exc.code, exc.read().decode("utf-8", "replace"))
-        except urllib.error.URLError as exc:
-            raise ApiError(0, "нет связи с сервером: %s" % exc.reason)
-
-        event = None
-        result = {"intent": None, "step": None, "done": None}
-        with response:
-            for raw in response:
-                line = raw.decode("utf-8", "replace").rstrip("\r\n")
-                if line.startswith("event:"):
-                    event = line[6:].strip()
+        body = json.dumps(payload).encode("utf-8")
+        extra = {
+            "Content-Type": "application/json; charset=utf-8",
+            "Accept": "text/event-stream",
+        }
+        for attempt in (1, 2):
+            try:
+                conn = self._connect()
+                conn.request(
+                    "POST", self.prefix + "/api/chat", body=body, headers=self._headers(extra)
+                )
+                response = conn.getresponse()
+                if response.status != 200:
+                    raw = response.read().decode("utf-8", "replace")
+                    self._drop()
+                    raise self._error(response.status, raw)
+                event = None
+                result = {"intent": None, "step": None, "done": None}
+                for raw_line in response:
+                    line = raw_line.decode("utf-8", "replace").rstrip("\r\n")
+                    if line.startswith("event:"):
+                        event = line[6:].strip()
+                        continue
+                    if not line.startswith("data:"):
+                        continue
+                    event_payload = json.loads(line[5:].strip() or "{}")
+                    if event == "meta":
+                        result["intent"] = event_payload.get("intent")
+                    elif event == "delta":
+                        piece = event_payload.get("text") or ""
+                        if piece:
+                            on_delta(piece)
+                    elif event == "step":
+                        result["step"] = event_payload.get("step") or event_payload
+                    elif event == "done":
+                        result["done"] = event_payload
+                if response.will_close:
+                    self._drop()
+                return result
+            except (http.client.HTTPException, OSError) as exc:
+                self._drop()
+                if attempt == 1:
                     continue
-                if not line.startswith("data:"):
-                    continue
-                payload = json.loads(line[5:].strip() or "{}")
-                if event == "meta":
-                    result["intent"] = payload.get("intent")
-                elif event == "delta":
-                    text_piece = payload.get("text") or ""
-                    if text_piece:
-                        on_delta(text_piece)
-                elif event == "step":
-                    result["step"] = payload.get("step") or payload
-                elif event == "done":
-                    result["done"] = payload
-        return result
+                raise ApiError(0, "нет связи с сервером: %s" % exc)
+        return {"intent": None, "step": None, "done": None}
 
 
 # --------------------------------------------------------------------------- #
@@ -445,11 +486,22 @@ def loop(client, state):
 
             # free text: question or error
             print()
+            started = [False]
+
             def emit(piece):
+                if sys.stdout.isatty() and not started[0]:
+                    sys.stdout.write("\r" + " " * 12 + "\r")
+                    started[0] = True
                 sys.stdout.write(piece)
                 sys.stdout.flush()
 
+            if sys.stdout.isatty():
+                sys.stdout.write(Color.wrap(DIM, "думаю…"))
+                sys.stdout.flush()
+
             result = client.chat(text, emit)
+            if sys.stdout.isatty() and not started[0]:
+                sys.stdout.write("\r" + " " * 12 + "\r")
             print()
             step = result.get("step")
             if step:
