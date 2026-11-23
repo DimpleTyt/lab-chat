@@ -62,6 +62,17 @@ python3 labchat.py --no-color      # для логов и записи
 python3 labchat.py --user roma --password '********'
 ```
 
+Сессия сохраняется между запусками. Выйти сразу при закрытии:
+
+```bash
+python3 labchat.py --logout-on-exit
+# или переменной окружения, один раз на машину:
+#   Windows: setx LABCHAT_LOGOUT_ON_EXIT 1
+#   Linux:   echo 'export LABCHAT_LOGOUT_ON_EXIT=1' >> ~/.bashrc
+```
+
+`--keep-session` отменяет выход, если переменная задана.
+
 `--user/--password` лучше не использовать на общей машине: пароль останется
 в истории shell. Для скриптов есть переменные `LABCHAT_USER`,
 `LABCHAT_PASSWORD`, `LABCHAT_SERVER`.

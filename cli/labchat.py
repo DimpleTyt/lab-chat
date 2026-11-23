@@ -230,6 +230,12 @@ class Client:
 # Session file
 # --------------------------------------------------------------------------- #
 def save_session(server, sid):
+    if not sid:
+        try:
+            os.remove(SESSION_FILE)
+        except OSError:
+            pass
+        return
     try:
         os.makedirs(os.path.dirname(SESSION_FILE), exist_ok=True)
         with open(SESSION_FILE, "w", encoding="utf-8") as fh:
@@ -550,6 +556,8 @@ def main():
     parser.add_argument("--password", default=os.environ.get("LABCHAT_PASSWORD"))
     parser.add_argument("--no-color", action="store_true")
     parser.add_argument("--insecure", action="store_true", help="не проверять TLS-сертификат")
+    parser.add_argument("--logout-on-exit", action="store_true", help="выйти из аккаунта при закрытии")
+    parser.add_argument("--keep-session", action="store_true", help="не выходить из аккаунта при закрытии")
     args = parser.parse_args()
 
     if args.no_color:
@@ -573,12 +581,20 @@ def main():
     name = (client.user or {}).get("display_name") or (client.user or {}).get("username")
     print(Color.wrap(BOLD, "lab-chat") + Color.wrap(DIM, " · " + args.server))
     print("Пользователь: %s   ·   /help — команды, /logout — сменить аккаунт" % name)
+    logout_on_exit = (
+        args.logout_on_exit
+        or os.environ.get("LABCHAT_LOGOUT_ON_EXIT") == "1"
+    ) and not args.keep_session
+
     try:
         loop(client, state)
     except KeyboardInterrupt:
         print()
     except ApiError as exc:
         print(Color.wrap(RED, "Ошибка: ") + str(exc))
+    finally:
+        if logout_on_exit:
+            client.logout()
     return 0
 
 
