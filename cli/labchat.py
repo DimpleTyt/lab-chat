@@ -342,12 +342,18 @@ def run_intake(client):
     print()
     print("Вставь текст задания. Одна строка, Enter в конце.")
     text = ask("> ").strip()
+    if text.lower() in ("/quit", "/exit", "/q"):
+        print()
+        raise SystemExit(0)
     if not text:
         print(Color.wrap(YELLOW, "Пустое задание — идём по методичке."))
     while True:
         data = client.intake(text)
         print_card(data)
         answer = ask("Всё верно? [Y/n] ").strip().lower()
+        if answer in ("/quit", "/exit", "/q"):
+            print()
+            raise SystemExit(0)
         if answer in ("", "y", "yes", "д", "да"):
             result = client.confirm(data.get("variant") or {})
             step = result.get("step")
@@ -357,6 +363,9 @@ def run_intake(client):
                 print_progress(result.get("progress"))
             return
         text = ask("Задание: ").strip()
+        if text.lower() in ("/quit", "/exit", "/q"):
+            print()
+            raise SystemExit(0)
 
 
 def loop(client, state):
@@ -492,7 +501,7 @@ def main():
 
     name = (client.user or {}).get("display_name") or (client.user or {}).get("username")
     print(Color.wrap(BOLD, "lab-chat") + Color.wrap(DIM, " · " + args.server))
-    print("Пользователь: %s   ·   /help для подсказок" % name)
+    print("Пользователь: %s   ·   /help — команды, /logout — сменить аккаунт" % name)
     try:
         loop(client, state)
     except KeyboardInterrupt:
